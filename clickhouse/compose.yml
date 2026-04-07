@@ -2,7 +2,7 @@ name: clickhouse
 
 services:
   clickhouse:
-    image: clickhouse/clickhouse-server:25.3.2.39
+    image: clickhouse/clickhouse-server:25.8.8.26
     container_name: clickhouse
     restart: unless-stopped
     environment:
