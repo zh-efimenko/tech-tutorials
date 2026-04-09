@@ -1,0 +1,21 @@
+# Docker Compose для тестов
+# Содержит только сервисы, необходимые для тестового слоя
+# Порты сдвинуты, чтобы не конфликтовать с dev-окружением
+
+services:
+
+  db:
+    image: postgres:17.5
+    container_name: course_test_postgres
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_DB: test
+      POSTGRES_USER: test
+      POSTGRES_PASSWORD: test
+
+  redis:
+    image: redis:7.4
+    container_name: course_test_redis
+    ports:
+      - "6380:6379"
