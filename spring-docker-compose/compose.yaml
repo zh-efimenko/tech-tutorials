@@ -1,0 +1,97 @@
+# Docker Compose для практики курса spring-boot-docker-compose
+# Spring Boot автоматически обнаружит этот файл и поднимет сервисы при запуске приложения
+
+services:
+
+  # --- База данных ---
+  db:
+    image: postgres:17.5
+    container_name: course_postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: course
+      POSTGRES_USER: course
+      POSTGRES_PASSWORD: course
+    restart: unless-stopped
+
+  # --- Кеш ---
+  redis:
+    image: redis:7.4
+    container_name: course_redis
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+
+  # --- Брокер сообщений (Zookeeper + Kafka) ---
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.2.1
+    container_name: course_zookeeper
+    ports:
+      - "2181:2181"
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    restart: unless-stopped
+
+  kafka:
+    image: confluentinc/cp-kafka:7.2.1
+    container_name: course_kafka
+    ports:
+      - "9092:9092"
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "29092"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  # --- Распределённый кеш (кластер из 2 нод) ---
+  hz_1:
+    image: hazelcast/hazelcast:5.6-jdk21
+    container_name: course_hazelcast_1
+    ports:
+      - "5701:5701"
+    environment:
+      HZ_CLUSTERNAME: course
+      HZ_NETWORK_PUBLICADDRESS: hz_1:5701
+      HZ_NETWORK_JOIN_AUTO-DETECTION_ENABLED: false
+      HZ_NETWORK_JOIN_TCP-IP_ENABLED: true
+      HZ_NETWORK_JOIN_TCP-IP_MEMBERS: hz_1:5701,hz_2:5701
+
+  hz_2:
+    image: hazelcast/hazelcast:5.6-jdk21
+    container_name: course_hazelcast_2
+    ports:
+      - "5702:5701"
+    environment:
+      HZ_CLUSTERNAME: course
+      HZ_NETWORK_PUBLICADDRESS: hz_2:5701
+      HZ_NETWORK_JOIN_AUTO-DETECTION_ENABLED: false
+      HZ_NETWORK_JOIN_TCP-IP_ENABLED: true
+      HZ_NETWORK_JOIN_TCP-IP_MEMBERS: hz_1:5701,hz_2:5701
+    labels:
+      # Spring Boot игнорирует этот сервис при автоконфигурации
+      org.springframework.boot.ignore: true
+
+  # --- UI для Hazelcast ---
+  hazelcast-management:
+    image: hazelcast/management-center:5.9
+    container_name: course_hazelcast_management
+    ports:
+      - "5700:8080"
+    environment:
+      MC_DEFAULT_CLUSTER: course
+      MC_DEFAULT_CLUSTER_MEMBERS: hz_1:5701,hz_2:5701
+    labels:
+      # Spring Boot не знает, как подключиться к Management Center — игнорируем
+      org.springframework.boot.ignore: true
