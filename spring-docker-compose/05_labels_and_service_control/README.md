@@ -155,9 +155,9 @@ services:
     ports:
       - "5432:5432"
     environment:
-      POSTGRES_DB: sportsbook
-      POSTGRES_USER: sportsbook
-      POSTGRES_PASSWORD: sportsbook
+      POSTGRES_DB: myapp
+      POSTGRES_USER: myapp
+      POSTGRES_PASSWORD: myapp
 
   # Кеш — Spring Boot подключается автоматически
   redis:
