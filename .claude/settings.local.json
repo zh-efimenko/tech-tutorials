@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(*)",
-      "WebSearch(*)"
+      "WebSearch(*)",
+      "mcp__exa__web_fetch_exa"
     ]
   }
 }
