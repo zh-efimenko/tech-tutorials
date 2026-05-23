@@ -366,7 +366,7 @@ Community-консенсус 2026: для долгосрочной экспер�
 Для инструментов с зрелым CLI (git, gh, docker, kubectl, aws-cli) bash-команды через terminal оказываются дешевле и надёжнее. Бенчмарк 2026 года:
 - MCP использует в 4–32 раза больше токенов, чем CLI на идентичных задачах
 - Reliability: 100% у CLI vs 72% у MCP (TCP-таймауты)
-- Стоимость на 10K операций в месяц: $3.20 (CLI) vs $55.20 (MCP)
+- Стоимость на 10K операций в месяц: \$3.20 (CLI) vs \$55.20 (MCP)
 
 Когда MCP оправдан:
 - Remote SaaS с OAuth (Workday, Salesforce, Notion, Linear, Figma) — нет CLI

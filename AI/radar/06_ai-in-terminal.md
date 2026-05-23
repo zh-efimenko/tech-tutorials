@@ -69,7 +69,7 @@ npm install -g @github/copilot
 copilot auth login
 ```
 
-Требования: GitHub Copilot Pro ($10/мес), Business ($19/мес) или Enterprise ($39/мес, SOC 2 Type II).
+Требования: GitHub Copilot Pro (\$10/мес), Business (\$19/мес) или Enterprise (\$39/мес, SOC 2 Type II).
 
 ### Режимы работы
 
@@ -260,7 +260,7 @@ aider --model claude-sonnet-4-6
 
 ### Позиционирование
 
-Официальный AI-агент от Anthropic для разработки в терминале. По данным Anthropic, около 4% публичных коммитов на GitHub создаётся через Claude Code, инструмент достиг $1B annualized revenue за полгода после публичного релиза.
+Официальный AI-агент от Anthropic для разработки в терминале. По данным Anthropic, около 4% публичных коммитов на GitHub создаётся через Claude Code, инструмент достиг \$1B annualized revenue за полгода после публичного релиза.
 
 Через Claude Code Anthropic ввели в индустрию три открытых стандарта:
 - **Model Context Protocol (MCP)** — ноябрь 2024, сейчас поддерживают все крупные IDE
@@ -344,7 +344,7 @@ claude -p "напиши тесты для auth модуля" \
 
 **Преимущества**: наиболее мощный из рассматриваемых агентов, hooks для детерминированной автоматизации, subagents и Agent Teams, нативная MCP-интеграция (8000+ серверов), четырёхуровневая иерархия CLAUDE.md.
 
-**Ограничения**: высокая стоимость при большом контексте (Opus 4.6/4.7: $5 за 1M input, $25 за 1M output), требует настройки для оптимальной работы (без CLAUDE.md/hooks/subagents = только Core Layer + высокие счета), data privacy — код отправляется в Anthropic API.
+**Ограничения**: высокая стоимость при большом контексте (Opus 4.6/4.7: \$5 за 1M input, \$25 за 1M output), требует настройки для оптимальной работы (без CLAUDE.md/hooks/subagents = только Core Layer + высокие счета), data privacy — код отправляется в Anthropic API.
 
 ---
 
@@ -591,12 +591,12 @@ Agent-подход значительно быстрее для multi-file за�
 
 | Инструмент | Стоимость |
 |-----------|-----------|
-| GitHub Copilot Pro | $10/мес |
-| GitHub Copilot Business | $19/мес |
-| Shell-GPT с GPT-4o | ~$0.01–0.05 за запрос |
-| Aider с Claude Sonnet | $1–10 за сессию |
-| Claude Code с Opus | $5–50 в день (интенсивно) |
-| Claude Code с Sonnet | $1–10 в день |
+| GitHub Copilot Pro | \$10/мес |
+| GitHub Copilot Business | \$19/мес |
+| Shell-GPT с GPT-4o | ~\$0.01–0.05 за запрос |
+| Aider с Claude Sonnet | \$1–10 за сессию |
+| Claude Code с Opus | \$5–50 в день (интенсивно) |
+| Claude Code с Sonnet | \$1–10 в день |
 | Локальные модели (Ollama) | только стоимость оборудования |
 
 **Способы оптимизации**:

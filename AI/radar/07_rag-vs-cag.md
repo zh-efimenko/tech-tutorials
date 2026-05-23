@@ -239,8 +239,8 @@ Production-примеры:
 
 Построение графа знаний (concepts, entities, relationships) вместо плоского векторного индекса:
 
-- **GraphRAG** (Microsoft) — win rate 72–83% над naive RAG по comprehensiveness и diversity на global queries (LLM-as-judge, Edge et al. 2024). Trade-off: медленная и дорогая индексация ($50–200 за 500 страниц), статичный граф
-- **LightRAG** — быстрее обновляется, ~$0.50 на индексацию 500 страниц (~1/100 стоимости GraphRAG). Хороший компромисс
+- **GraphRAG** (Microsoft) — win rate 72–83% над naive RAG по comprehensiveness и diversity на global queries (LLM-as-judge, Edge et al. 2024). Trade-off: медленная и дорогая индексация (\$50–200 за 500 страниц), статичный граф
+- **LightRAG** — быстрее обновляется, ~\$0.50 на индексацию 500 страниц (~1/100 стоимости GraphRAG). Хороший компромисс
 - Когда выбирать: статичная база знаний с насыщенными cross-document связями
 
 ---

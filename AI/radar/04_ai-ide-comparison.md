@@ -24,7 +24,7 @@ AI-инструменты для разработки в 2026 году деля�
 |------|---------|
 | 04.2025 | Codex CLI (OpenAI, Apache-2.0, terminal-агент) |
 | 06.2025 | Gemini CLI (Google, Apache 2.0, 1M контекст) |
-| 07.2025 | Cognition приобрела Windsurf (цена не раскрыта); Google за $2.4B нанял основателей через acqui-hire |
+| 07.2025 | Cognition приобрела Windsurf (цена не раскрыта); Google за \$2.4B нанял основателей через acqui-hire |
 | 09.2025 | Claude Code 2.0 + публичный launch Subagents |
 | 10.2025 | Skills (Anthropic, для Claude Code) |
 | 11.2025 | Antigravity (Google, бесплатный preview, Manager Surface для параллельных агентов) |
@@ -136,7 +136,7 @@ Privacy Mode — код не сохраняется на серверах Cursor
 
 ## Windsurf
 
-Proprietary IDE от Codeium с AI, встроенным в архитектуру редактора. В июле 2025 приобретён Cognition AI (цена сделки не раскрыта); до этого Google через acqui-hire нанял основателей Windsurf за $2.4B.
+Proprietary IDE от Codeium с AI, встроенным в архитектуру редактора. В июле 2025 приобретён Cognition AI (цена сделки не раскрыта); до этого Google через acqui-hire нанял основателей Windsurf за \$2.4B.
 
 ### Архитектура и Cascade
 
@@ -263,15 +263,15 @@ TTFT зависит от размера контекста, выбранной �
 
 | Инструмент | Тариф | Цена |
 |-----------|-------|------|
-| GitHub Copilot | Individual | $10/мес |
-| GitHub Copilot | Business | $19/user/мес |
-| GitHub Copilot | Enterprise | $39/user/мес |
+| GitHub Copilot | Individual | \$10/мес |
+| GitHub Copilot | Business | \$19/user/мес |
+| GitHub Copilot | Enterprise | \$39/user/мес |
 | Cursor | Hobby | бесплатно (ограниченно) |
-| Cursor | Pro | $20/мес |
-| Cursor | Teams | $40/user/мес |
+| Cursor | Pro | \$20/мес |
+| Cursor | Teams | \$40/user/мес |
 | Windsurf | Free | бесплатно (модель Codeium) |
-| Windsurf | Pro | $20/мес |
-| Windsurf | Teams | $40/user/мес |
+| Windsurf | Pro | \$20/мес |
+| Windsurf | Teams | \$40/user/мес |
 
 ### ROI для senior-разработчика
 
