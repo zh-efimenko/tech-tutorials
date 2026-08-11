@@ -66,6 +66,10 @@
 
 **Примеры кода:** реалистичные (аналитика, ставки, пользователи, события), рабочие (можно скопировать и запустить). SQL — ключевые слова UPPERCASE, таблицы/колонки lowercase.
 
+**Версии в примерах:** проверять запросом к реестру, а не по памяти — `maven-metadata.xml` на repo1.maven.org и plugins.gradle.org, `services.gradle.org/versions/current` для Gradle. Модель уверенно называет версии, которых не существует: в `gradle/toml/` до проверки стояла несуществующая `mapstruct 1.6.4`. Апгрейд мажорной версии проверять и на переезд координат: Spring Boot 4 → Jackson 3 в группе `tools.jackson`, `starter-aop` → `starter-aspectj`; Testcontainers 2 → `org.testcontainers:testcontainers-postgresql`.
+
+**Тексты ошибок и вывод команд:** воспроизводить на актуальной версии инструмента и копировать фактический вывод. Сообщения Gradle/CLI меняются между версиями, а в уроке они подаются как точное ожидание — это то, обо что студент спотыкается первым.
+
 **НЕ делать в уроках:**
 - Секции «Введение» или оглавление
 - «В этом уроке мы рассмотрим...» / «мы узнали...»
@@ -75,7 +79,7 @@
 
 ## Стек, предполагаемый у аудитории
 
-Java 17–25 · Spring Boot 3.x · Gradle 8.x · Docker Desktop · PostgreSQL · Redis · Kafka · Hazelcast
+Java 17–25 · Spring Boot 3.x–4.x · Gradle 8.x–9.x · Docker Desktop · PostgreSQL · Redis · Kafka · Hazelcast
 
 ## Создание нового курса
 

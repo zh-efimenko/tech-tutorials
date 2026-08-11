@@ -8,12 +8,12 @@
 
 ```toml
 [versions]
-spring-boot = "3.5.3"
-jackson = "2.18.3"
-lombok = "1.18.36"
-mapstruct = "1.6.4"
-flyway = "11.13.0"
-postgresql = "42.7.5"
+spring-boot = "4.1.0"
+jackson = "3.2.1"
+lombok = "1.18.46"
+mapstruct = "1.6.3"
+flyway = "13.2.0"
+postgresql = "42.7.13"
 ```
 
 ### Именование версий
@@ -25,13 +25,13 @@ postgresql = "42.7.5"
 ```toml
 # Правильно — одна версия для группы библиотек
 [versions]
-jackson = "2.18.3"
+jackson = "3.2.1"
 
 # Неправильно — дублирование версии
 [versions]
-jackson-databind = "2.18.3"
-jackson-annotations = "2.18.3"
-jackson-core = "2.18.3"
+jackson-databind = "3.2.1"
+jackson-core = "3.2.1"
+jackson-dataformat = "3.2.1"
 ```
 
 ### Rich versions (расширенные версии)
@@ -41,19 +41,19 @@ jackson-core = "2.18.3"
 ```toml
 [versions]
 # Простая (интерпретируется как require)
-guava = "33.4.0-jre"
+guava = "33.5.0-jre"
 
 # Строгая — не допускает повышения транзитивными зависимостями
-commons-lang = { strictly = "3.17.0" }
+commons-lang = { strictly = "3.20.0" }
 
 # Диапазон с предпочтением
-jedis = { require = "[4.4.6,)", prefer = "5.0.1" }
+jedis = { require = "[7.5.0,)", prefer = "8.0.0" }
 
 # Строгий диапазон с предпочтением
 my-lib = { strictly = "[1.0, 2.0[", prefer = "1.2" }
 
 # Отклонение конкретных версий
-okhttp = { require = "4.12.0", reject = ["4.11.0", "4.10.0"] }
+okhttp = { require = "5.4.0", reject = ["5.3.2", "5.3.1"] }
 ```
 
 | Модификатор | Описание |
@@ -75,7 +75,7 @@ okhttp = { require = "4.12.0", reject = ["4.11.0", "4.10.0"] }
 
 ```toml
 [versions]
-spring-boot = "3.5.3"
+spring-boot = "4.1.0"
 
 [libraries]
 spring-boot-starter = { module = "org.springframework.boot:spring-boot-starter", version.ref = "spring-boot" }
@@ -98,7 +98,7 @@ spring-boot-starter = { group = "org.springframework.boot", name = "spring-boot-
 
 ```toml
 [libraries]
-guava = { module = "com.google.guava:guava", version = "33.4.0-jre" }
+guava = { module = "com.google.guava:guava", version = "33.5.0-jre" }
 ```
 
 Версия указана напрямую, без ссылки на `[versions]`. Используй для зависимостей с уникальной версией.
@@ -121,21 +121,23 @@ spring-boot-starter = { module = "org.springframework.boot:spring-boot-starter" 
 ```toml
 [libraries]
 # Правильно: первый сегмент = проект
-jackson-databind = { module = "com.fasterxml.jackson.core:jackson-databind", version.ref = "jackson" }
-jackson-annotations = { module = "com.fasterxml.jackson.core:jackson-annotations", version.ref = "jackson" }
+jackson-databind = { module = "tools.jackson.core:jackson-databind", version.ref = "jackson" }
+jackson-core = { module = "tools.jackson.core:jackson-core", version.ref = "jackson" }
 commons-lang3 = { module = "org.apache.commons:commons-lang3", version.ref = "commons-lang" }
 
 # Неправильно: слишком длинные имена с полным path
-fasterxml-jackson-core-databind = { ... }
+tools-jackson-core-databind = { ... }
 org-apache-commons-lang3 = { ... }
 ```
+
+> **Важно про Jackson.** В Jackson 3 (Spring Boot 4 тянет именно его) сменилась группа: `tools.jackson.core:jackson-databind` вместо `com.fasterxml.jackson.core:jackson-databind`. Аннотации остались в старой группе — `com.fasterxml.jackson.core:jackson-annotations`. Поддержка `java.time` встроена в `jackson-databind`, отдельный артефакт `jackson-datatype-jsr310` больше не публикуется.
 
 **2. Дефисы внутри артефакта → camelCase**
 
 ```toml
 [libraries]
 # Дефис в названии артефакта → camelCase
-jackson-dataformatCsv = { module = "com.fasterxml.jackson.dataformat:jackson-dataformat-csv", version.ref = "jackson" }
+jackson-dataformatCsv = { module = "tools.jackson.dataformat:jackson-dataformat-csv", version.ref = "jackson" }
 networknt-jsonSchemaValidator = { module = "com.networknt:json-schema-validator", version.ref = "networknt" }
 ```
 
@@ -159,13 +161,13 @@ bmuschko-docker-plugin = { module = "com.bmuschko:gradle-docker-plugin", version
 
 ```toml
 [versions]
-spring-boot = "3.5.3"
-jackson = "2.18.3"
-lombok = "1.18.36"
-mapstruct = "1.6.4"
-postgresql = "42.7.5"
-testcontainers = "1.20.6"
-instancio = "5.3.1"
+spring-boot = "4.1.0"
+jackson = "3.2.1"
+lombok = "1.18.46"
+mapstruct = "1.6.3"
+postgresql = "42.7.13"
+testcontainers = "2.0.5"
+instancio = "5.6.0"
 
 [libraries]
 # Spring Boot
@@ -176,8 +178,8 @@ spring-boot-starter-test = { module = "org.springframework.boot:spring-boot-star
 spring-boot-docker-compose = { module = "org.springframework.boot:spring-boot-docker-compose", version.ref = "spring-boot" }
 
 # Jackson
-jackson-databind = { module = "com.fasterxml.jackson.core:jackson-databind", version.ref = "jackson" }
-jackson-annotations = { module = "com.fasterxml.jackson.core:jackson-annotations", version.ref = "jackson" }
+jackson-databind = { module = "tools.jackson.core:jackson-databind", version.ref = "jackson" }
+jackson-core = { module = "tools.jackson.core:jackson-core", version.ref = "jackson" }
 
 # Инструменты
 lombok = { module = "org.projectlombok:lombok", version.ref = "lombok" }
@@ -188,8 +190,8 @@ mapstruct-processor = { module = "org.mapstruct:mapstruct-processor", version.re
 postgresql = { module = "org.postgresql:postgresql", version.ref = "postgresql" }
 
 # Тестирование
-testcontainers-postgresql = { module = "org.testcontainers:postgresql", version.ref = "testcontainers" }
-testcontainers-junit = { module = "org.testcontainers:junit-jupiter", version.ref = "testcontainers" }
+testcontainers-postgresql = { module = "org.testcontainers:testcontainers-postgresql", version.ref = "testcontainers" }
+testcontainers-junit = { module = "org.testcontainers:testcontainers-junit-jupiter", version.ref = "testcontainers" }
 instancio-junit = { module = "org.instancio:instancio-junit", version.ref = "instancio" }
 ```
 
@@ -234,7 +236,7 @@ dependencies {
 ```groovy
 // Получить строковое значение версии
 def springBootVersion = libs.versions.spring.boot.get()
-println "Spring Boot: $springBootVersion"  // 3.5.3
+println "Spring Boot: $springBootVersion"  // 4.1.0
 
 // В buildscript classpath
 buildscript {
@@ -269,9 +271,9 @@ jackson-dataformatCsv = { ... }       # → libs.jackson.dataformatCsv
 
 ```toml
 [versions]
-spring-boot = "3.5.3"
-lombok = "1.18.36"
-postgresql = "42.7.5"
+spring-boot = "4.1.0"
+lombok = "1.18.46"
+postgresql = "42.7.13"
 
 [libraries]
 spring-boot-starter-web = { module = "org.springframework.boot:spring-boot-starter-web", version.ref = "spring-boot" }

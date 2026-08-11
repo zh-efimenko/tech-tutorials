@@ -237,7 +237,7 @@ allprojects {
 # 1. Внести изменения в master-копию build-config
 cd my-platform/build-config
 # ... редактирование файлов ...
-git add . && git commit -m "Update Spring Boot to 3.5.4"
+git add . && git commit -m "Update Spring Boot to 4.1.0"
 git push
 
 # 2. Обновить submodule в каждом сервисе
@@ -315,7 +315,7 @@ plugins {
 }
 
 dependencies {
-    implementation platform("org.springframework.boot:spring-boot-dependencies:3.5.3")
+    implementation platform("org.springframework.boot:spring-boot-dependencies:4.1.0")
 }
 ```
 

@@ -6,16 +6,16 @@
 
 ```
 Ваш проект
-├── spring-boot-starter-web    → требует jackson-databind 2.18.3
-├── some-library               → требует jackson-databind 2.17.0
-└── another-library            → требует jackson-databind 2.16.1
+├── spring-boot-starter-web    → требует jackson-databind 3.1.4
+├── some-library               → требует jackson-databind 3.0.4
+└── another-library            → требует jackson-databind 3.2.1
 ```
 
 Какую версию `jackson-databind` выбрать? Gradle должен **разрешить конфликт**.
 
 ### Стратегия Gradle по умолчанию
 
-Gradle выбирает **наивысшую** версию из запрошенных. В примере выше: `2.18.3`.
+Gradle выбирает **наивысшую** версию из запрошенных. В примере выше: `3.2.1`.
 
 Это работает в большинстве случаев (библиотеки обратно совместимы). Но иногда нужен явный контроль.
 
@@ -26,22 +26,22 @@ Gradle выбирает **наивысшую** версию из запроше�
 ```toml
 [versions]
 # Простая версия (интерпретируется как require)
-guava = "33.4.0-jre"
+guava = "33.5.0-jre"
 
 # strictly — жёсткое ограничение
-commons-lang = { strictly = "3.17.0" }
+commons-lang = { strictly = "3.20.0" }
 
 # require — минимальная версия (может быть повышена)
-jedis-min = { require = "4.4.6" }
+jedis-min = { require = "7.5.0" }
 
 # prefer — предпочтительная (используется при отсутствии конфликта)
-jedis = { require = "[4.4.6,)", prefer = "5.0.1" }
+jedis = { require = "[7.5.0,)", prefer = "8.0.0" }
 
 # strictly + prefer — жёсткий диапазон с предпочтением
 my-lib = { strictly = "[1.0, 2.0[", prefer = "1.2" }
 
 # reject — запрещённые версии
-okhttp = { require = "4.12.0", reject = ["4.11.0", "4.10.0"] }
+okhttp = { require = "5.4.0", reject = ["5.3.2", "5.3.1"] }
 ```
 
 ### Иерархия жёсткости (от слабой к сильной)
@@ -57,32 +57,32 @@ reject     →  "Эти версии запрещены. Если выбрана
 
 ```toml
 [versions]
-guava = "33.4.0-jre"
+guava = "33.5.0-jre"
 # Эквивалентно:
-# guava = { require = "33.4.0-jre" }
+# guava = { require = "33.5.0-jre" }
 ```
 
 Простая строка — это `require`. Gradle может выбрать более высокую версию, если транзитивная зависимость требует её.
 
 ```
-Ваш проект: require guava 33.4.0-jre
-Библиотека X: require guava 33.5.0-jre
-→ Результат: guava 33.5.0-jre (повышена)
+Ваш проект: require guava 33.5.0-jre
+Библиотека X: require guava 33.6.0-jre
+→ Результат: guava 33.6.0-jre (повышена)
 ```
 
 ### strictly — жёсткое ограничение
 
 ```toml
 [versions]
-guava = { strictly = "33.4.0-jre" }
+guava = { strictly = "33.5.0-jre" }
 ```
 
 `strictly` не допускает повышения. Если транзитивная зависимость требует другую версию — ошибка:
 
 ```
-Ваш проект: strictly guava 33.4.0-jre
-Библиотека X: require guava 33.5.0-jre
-→ Результат: ОШИБКА — конфликт, strictly запрещает 33.5.0-jre
+Ваш проект: strictly guava 33.5.0-jre
+Библиотека X: require guava 33.6.0-jre
+→ Результат: ОШИБКА — конфликт, strictly запрещает 33.6.0-jre
 ```
 
 **Когда использовать**: когда точно знаешь, что другая версия сломает проект (breaking changes, баги в конкретной версии).
@@ -113,7 +113,7 @@ my-lib = { strictly = "[1.0, 2.0[", prefer = "1.5" }
 ```toml
 [versions]
 # Запретить версии с известными багами
-jackson = { require = "2.18.3", reject = ["2.18.0", "2.18.1"] }
+jackson = { require = "3.2.1", reject = ["3.2.0", "3.1.5"] }
 ```
 
 Если конфликт-резолюция выберет запрещённую версию — ошибка сборки.
@@ -124,7 +124,7 @@ Rich versions можно указать и в `[libraries]`:
 
 ```toml
 [libraries]
-commons-lang3 = { group = "org.apache.commons", name = "commons-lang3", version = { strictly = "[3.8, 4.0[", prefer = "3.17.0" } }
+commons-lang3 = { group = "org.apache.commons", name = "commons-lang3", version = { strictly = "[3.8, 4.0[", prefer = "3.20.0" } }
 ```
 
 ## Платформы (Platforms) и BOM
@@ -138,14 +138,14 @@ BOM (Bill of Materials) — специальный POM-файл, который 
 <dependencyManagement>
     <dependencies>
         <dependency>
-            <groupId>com.fasterxml.jackson.core</groupId>
+            <groupId>tools.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
-            <version>2.18.3</version>
+            <version>3.1.4</version>
         </dependency>
         <dependency>
             <groupId>org.postgresql</groupId>
             <artifactId>postgresql</artifactId>
-            <version>42.7.5</version>
+            <version>42.7.11</version>
         </dependency>
         <!-- ... сотни зависимостей ... -->
     </dependencies>
@@ -157,11 +157,11 @@ BOM (Bill of Materials) — специальный POM-файл, который 
 ```groovy
 dependencies {
     // Импортирует BOM — управляет версиями
-    implementation platform("org.springframework.boot:spring-boot-dependencies:3.5.3")
+    implementation platform("org.springframework.boot:spring-boot-dependencies:4.1.0")
 
     // Теперь версии не нужны — BOM их определяет
     implementation "org.springframework.boot:spring-boot-starter-web"     // версия из BOM
-    implementation "com.fasterxml.jackson.core:jackson-databind"          // версия из BOM
+    implementation "tools.jackson.core:jackson-databind"          // версия из BOM
     runtimeOnly "org.postgresql:postgresql"                               // версия из BOM
 }
 ```
@@ -176,10 +176,10 @@ dependencies {
 ```groovy
 dependencies {
     // Форсирует версии — даже транзитивные зависимости не могут повысить
-    implementation enforcedPlatform("org.springframework.boot:spring-boot-dependencies:3.5.3")
+    implementation enforcedPlatform("org.springframework.boot:spring-boot-dependencies:4.1.0")
 
     implementation "org.springframework.boot:spring-boot-starter-web"
-    implementation "com.fasterxml.jackson.core:jackson-databind"  // строго 2.18.3, даже если кто-то тянет 2.19.0
+    implementation "tools.jackson.core:jackson-databind"  // строго 3.1.4, даже если кто-то тянет 3.2.1
 }
 ```
 
@@ -235,16 +235,16 @@ javaPlatform {
 
 dependencies {
     // Импорт Spring Boot BOM
-    api platform("org.springframework.boot:spring-boot-dependencies:3.5.3")
+    api platform("org.springframework.boot:spring-boot-dependencies:4.1.0")
 
     // Импорт других BOM
-    api platform("org.testcontainers:testcontainers-bom:1.20.6")
+    api platform("org.testcontainers:testcontainers-bom:2.0.5")
 
     // Управление версиями конкретных библиотек
     constraints {
-        api "org.mapstruct:mapstruct:1.6.4"
-        api "org.mapstruct:mapstruct-processor:1.6.4"
-        api "org.instancio:instancio-junit:5.3.1"
+        api "org.mapstruct:mapstruct:1.6.3"
+        api "org.mapstruct:mapstruct-processor:1.6.3"
+        api "org.instancio:instancio-junit:5.6.0"
     }
 }
 
@@ -290,7 +290,7 @@ spring-boot-starter-web = { module = "org.springframework.boot:spring-boot-start
 
 ```groovy
 dependencies {
-    implementation platform("org.springframework.boot:spring-boot-dependencies:3.5.3")
+    implementation platform("org.springframework.boot:spring-boot-dependencies:4.1.0")
     implementation libs.spring.boot.starter.web  // версия из BOM
 }
 ```
@@ -307,15 +307,15 @@ dependencies {
 Вывод:
 
 ```
-com.fasterxml.jackson.core:jackson-databind:2.18.3
+tools.jackson.core:jackson-databind:3.1.4
    variant "runtime" [
       ...
    ]
    Selection reasons:
       - By constraint : platform com.mycompany:app-dependencies:1.0.4
-      - By conflict resolution : between versions 2.18.3 and 2.17.0
+      - By conflict resolution : between versions 3.1.4 and 3.0.4
 
-com.fasterxml.jackson.core:jackson-databind:2.17.0 -> 2.18.3
+tools.jackson.core:jackson-databind:3.0.4 -> 3.1.4
 \--- some-library:1.0.0
      \--- compileClasspath
 ```
@@ -336,7 +336,7 @@ com.fasterxml.jackson.core:jackson-databind:2.17.0 -> 2.18.3
 configurations.all {
     resolutionStrategy {
         // Форсировать конкретную версию
-        force "com.fasterxml.jackson.core:jackson-databind:2.18.3"
+        force "tools.jackson.core:jackson-databind:3.1.4"
 
         // Запретить версию
         componentSelection {
@@ -359,14 +359,14 @@ configurations.all {
 
 ```toml
 [versions]
-guava = { strictly = "33.4.0-jre" }
+guava = { strictly = "33.5.0-jre" }
 ```
 
 2. Подключи Spring Boot BOM как platform и убери версии из зависимостей:
 
 ```groovy
 dependencies {
-    implementation platform("org.springframework.boot:spring-boot-dependencies:3.5.3")
+    implementation platform("org.springframework.boot:spring-boot-dependencies:4.1.0")
     implementation "org.springframework.boot:spring-boot-starter-web"  // без версии
 }
 ```

@@ -6,7 +6,8 @@
 
 ## Требования
 
-- Java 17+, Gradle 7.4.1+ (стабильная поддержка version catalogs)
+- Java 17+, Gradle 9.x; примеры прогонялись на Gradle 9.5.0 и Java 25; version catalogs стабильны с Gradle 7.4.1
+- Примеры используют Spring Boot 4.1.0 — Jackson там уже 3.x (группа `tools.jackson`)
 - Базовые знания Gradle (build.gradle, dependencies, plugins)
 - Терминал (bash/zsh)
 

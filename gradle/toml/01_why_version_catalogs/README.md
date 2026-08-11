@@ -9,14 +9,14 @@
 ```groovy
 // order-service/build.gradle
 dependencies {
-    implementation "org.springframework.boot:spring-boot-starter-web:3.5.3"
-    implementation "com.fasterxml.jackson.core:jackson-databind:2.18.3"
+    implementation "org.springframework.boot:spring-boot-starter-web:4.1.0"
+    implementation "tools.jackson.core:jackson-databind:3.2.1"
 }
 
 // payment-service/build.gradle
 dependencies {
-    implementation "org.springframework.boot:spring-boot-starter-web:3.5.3"
-    implementation "com.fasterxml.jackson.core:jackson-databind:2.18.3"  // а вдруг тут 2.19.0?
+    implementation "org.springframework.boot:spring-boot-starter-web:4.1.0"
+    implementation "tools.jackson.core:jackson-databind:3.2.1"  // а вдруг тут 3.2.0?
 }
 ```
 
@@ -30,14 +30,14 @@ dependencies {
 
 ```properties
 # gradle.properties
-spring_boot_version=3.5.3
-jackson_version=2.18.3
+spring_boot_version=4.1.0
+jackson_version=3.2.1
 ```
 
 ```groovy
 dependencies {
     implementation "org.springframework.boot:spring-boot-starter-web:$spring_boot_version"
-    implementation "com.fasterxml.jackson.core:jackson-databind:$jackson_version"
+    implementation "tools.jackson.core:jackson-databind:$jackson_version"
 }
 ```
 
@@ -52,12 +52,12 @@ dependencies {
 ```groovy
 ext {
     versions = [
-        springBoot: "3.5.3",
-        jackson: "2.18.3"
+        springBoot: "4.1.0",
+        jackson: "3.2.1"
     ]
     deps = [
         springBootWeb: "org.springframework.boot:spring-boot-starter-web:${versions.springBoot}",
-        jackson: "com.fasterxml.jackson.core:jackson-databind:${versions.jackson}"
+        jackson: "tools.jackson.core:jackson-databind:${versions.jackson}"
     ]
 }
 
@@ -76,7 +76,7 @@ dependencies {
 
 ```kotlin
 object Versions {
-    const val springBoot = "3.5.3"
+    const val springBoot = "4.1.0"
 }
 object Deps {
     const val springBootWeb = "org.springframework.boot:spring-boot-starter-web:${Versions.springBoot}"
@@ -121,12 +121,12 @@ gradle/libs.versions.toml     ← один файл
 
 ```toml
 [versions]
-spring-boot = "3.5.3"
-jackson = "2.18.3"
+spring-boot = "4.1.0"
+jackson = "3.2.1"
 
 [libraries]
 spring-boot-starter-web = { module = "org.springframework.boot:spring-boot-starter-web", version.ref = "spring-boot" }
-jackson-databind = { module = "com.fasterxml.jackson.core:jackson-databind", version.ref = "jackson" }
+jackson-databind = { module = "tools.jackson.core:jackson-databind", version.ref = "jackson" }
 
 [plugins]
 spring-boot = { id = "org.springframework.boot", version.ref = "spring-boot" }
@@ -177,11 +177,11 @@ dependencies {
 ```groovy
 plugins {
     id 'java'                                       // core-плагин (без версии)
-    id 'org.springframework.boot' version '3.5.3'   // внешний плагин (с версией)
+    id 'org.springframework.boot' version '4.1.0'   // внешний плагин (с версией)
 }
 ```
 
-Именно этот `version '3.5.3'` мы хотим вынести в TOML.
+Именно этот `version '4.1.0'` мы хотим вынести в TOML.
 
 ## Практика
 

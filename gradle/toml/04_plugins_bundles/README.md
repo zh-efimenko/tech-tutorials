@@ -8,9 +8,9 @@
 
 ```toml
 [versions]
-spring-boot = "3.5.3"
-spotless = "7.0.2"
-flyway = "11.13.0"
+spring-boot = "4.1.0"
+spotless = "8.9.0"
+flyway = "13.2.0"
 
 [plugins]
 # С ссылкой на [versions]
@@ -19,7 +19,7 @@ spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }
 flyway = { id = "org.flywaydb.flyway", version.ref = "flyway" }
 
 # С inline-версией
-jib = { id = "com.google.cloud.tools.jib", version = "3.4.5" }
+jib = { id = "com.google.cloud.tools.jib", version = "3.5.4" }
 ```
 
 Каждый плагин содержит:
@@ -30,9 +30,9 @@ jib = { id = "com.google.cloud.tools.jib", version = "3.4.5" }
 
 ```groovy
 plugins {
-    alias(libs.plugins.spring.boot)    // вместо: id 'org.springframework.boot' version '3.5.3'
-    alias(libs.plugins.spotless)       // вместо: id 'com.diffplug.spotless' version '7.0.2'
-    alias(libs.plugins.flyway)         // вместо: id 'org.flywaydb.flyway' version '11.13.0'
+    alias(libs.plugins.spring.boot)    // вместо: id 'org.springframework.boot' version '4.1.0'
+    alias(libs.plugins.spotless)       // вместо: id 'com.diffplug.spotless' version '8.9.0'
+    alias(libs.plugins.flyway)         // вместо: id 'org.flywaydb.flyway' version '13.2.0'
 }
 ```
 
@@ -74,12 +74,12 @@ apply plugin: "org.barfuin.gradle.jacocolog"
 
 ```toml
 [versions]
-spring-boot = "3.5.3"
-flyway = "11.13.0"
-spotless = "7.0.2"
-jib = "3.4.5"
-jacocolog = "3.1.0"
-open-api-generator = "7.11.0"
+spring-boot = "4.1.0"
+flyway = "13.2.0"
+spotless = "8.9.0"
+jib = "3.5.4"
+jacocolog = "4.0.2"
+open-api-generator = "7.14.0"
 
 [plugins]
 spring-boot = { id = "org.springframework.boot", version.ref = "spring-boot" }
@@ -119,8 +119,8 @@ plugins {
 buildscript {
     dependencies {
         // .get() возвращает строковое значение версии
-        classpath "org.flywaydb:flyway-database-postgresql:${libs.versions.flyway.plugin.get()}"
-        classpath "org.openapitools:openapi-generator-gradle-plugin:${libs.versions.open.api.generator.plugin.get()}"
+        classpath "org.flywaydb:flyway-database-postgresql:${libs.versions.flyway.get()}"
+        classpath "org.openapitools:openapi-generator-gradle-plugin:${libs.versions.open.api.generator.get()}"
     }
 }
 ```
@@ -133,16 +133,16 @@ buildscript {
 
 ```toml
 [versions]
-spring-boot = "3.5.3"
-testcontainers = "1.20.6"
+spring-boot = "4.1.0"
+testcontainers = "2.0.5"
 
 [libraries]
 spring-boot-starter = { module = "org.springframework.boot:spring-boot-starter", version.ref = "spring-boot" }
 spring-boot-starter-web = { module = "org.springframework.boot:spring-boot-starter-web", version.ref = "spring-boot" }
 spring-boot-starter-jdbc = { module = "org.springframework.boot:spring-boot-starter-jdbc", version.ref = "spring-boot" }
 spring-boot-starter-test = { module = "org.springframework.boot:spring-boot-starter-test", version.ref = "spring-boot" }
-testcontainers-postgresql = { module = "org.testcontainers:postgresql", version.ref = "testcontainers" }
-testcontainers-junit = { module = "org.testcontainers:junit-jupiter", version.ref = "testcontainers" }
+testcontainers-postgresql = { module = "org.testcontainers:testcontainers-postgresql", version.ref = "testcontainers" }
+testcontainers-junit = { module = "org.testcontainers:testcontainers-junit-jupiter", version.ref = "testcontainers" }
 
 [bundles]
 # Бандл ссылается на алиасы из [libraries]
@@ -205,26 +205,26 @@ dependencies {
 
 ```toml
 [versions]
-spring-boot = "3.5.3"
-jackson = "2.18.3"
-lombok = "1.18.36"
-mapstruct = "1.6.4"
-testcontainers = "1.20.6"
-instancio = "5.3.1"
+spring-boot = "4.1.0"
+jackson = "3.2.1"
+lombok = "1.18.46"
+mapstruct = "1.6.3"
+testcontainers = "2.0.5"
+instancio = "5.6.0"
 
 [libraries]
 # Spring Boot
 spring-boot-starter = { module = "org.springframework.boot:spring-boot-starter", version.ref = "spring-boot" }
 spring-boot-starter-web = { module = "org.springframework.boot:spring-boot-starter-web", version.ref = "spring-boot" }
 spring-boot-starter-jdbc = { module = "org.springframework.boot:spring-boot-starter-jdbc", version.ref = "spring-boot" }
-spring-boot-starter-aop = { module = "org.springframework.boot:spring-boot-starter-aop", version.ref = "spring-boot" }
+spring-boot-starter-aspectj = { module = "org.springframework.boot:spring-boot-starter-aspectj", version.ref = "spring-boot" }
 spring-boot-starter-test = { module = "org.springframework.boot:spring-boot-starter-test", version.ref = "spring-boot" }
 spring-boot-docker-compose = { module = "org.springframework.boot:spring-boot-docker-compose", version.ref = "spring-boot" }
 
 # Jackson
-jackson-databind = { module = "com.fasterxml.jackson.core:jackson-databind", version.ref = "jackson" }
-jackson-annotations = { module = "com.fasterxml.jackson.core:jackson-annotations", version.ref = "jackson" }
-jackson-datatype-jsr310 = { module = "com.fasterxml.jackson.datatype:jackson-datatype-jsr310", version.ref = "jackson" }
+jackson-databind = { module = "tools.jackson.core:jackson-databind", version.ref = "jackson" }
+jackson-core = { module = "tools.jackson.core:jackson-core", version.ref = "jackson" }
+jackson-dataformatYaml = { module = "tools.jackson.dataformat:jackson-dataformat-yaml", version.ref = "jackson" }
 
 # Инструменты
 lombok = { module = "org.projectlombok:lombok", version.ref = "lombok" }
@@ -233,13 +233,13 @@ mapstruct-processor = { module = "org.mapstruct:mapstruct-processor", version.re
 
 # Тестирование
 spring-boot-starter-test = { module = "org.springframework.boot:spring-boot-starter-test", version.ref = "spring-boot" }
-testcontainers-postgresql = { module = "org.testcontainers:postgresql", version.ref = "testcontainers" }
-testcontainers-junit = { module = "org.testcontainers:junit-jupiter", version.ref = "testcontainers" }
+testcontainers-postgresql = { module = "org.testcontainers:testcontainers-postgresql", version.ref = "testcontainers" }
+testcontainers-junit = { module = "org.testcontainers:testcontainers-junit-jupiter", version.ref = "testcontainers" }
 instancio-junit = { module = "org.instancio:instancio-junit", version.ref = "instancio" }
 
 [bundles]
-spring-web = ["spring-boot-starter", "spring-boot-starter-web", "spring-boot-starter-aop"]
-jackson = ["jackson-databind", "jackson-annotations", "jackson-datatype-jsr310"]
+spring-web = ["spring-boot-starter", "spring-boot-starter-web", "spring-boot-starter-aspectj"]
+jackson = ["jackson-databind", "jackson-core", "jackson-dataformatYaml"]
 testcontainers = ["testcontainers-postgresql", "testcontainers-junit"]
 testing = ["spring-boot-starter-test", "testcontainers-postgresql", "testcontainers-junit", "instancio-junit"]
 

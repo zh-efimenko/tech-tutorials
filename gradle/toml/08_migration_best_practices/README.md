@@ -18,15 +18,9 @@ version-catalog/
 
 ```groovy
 rootProject.name = "my-version-catalog"
-
-dependencyResolutionManagement {
-    versionCatalogs {
-        libs {
-            from(files("gradle/libs.versions.toml"))
-        }
-    }
-}
 ```
+
+> Блок `dependencyResolutionManagement.versionCatalogs` здесь не нужен и вреден: файл лежит на дефолтном пути, Gradle импортирует его сам, а повторный `from` валит сборку с `you can only call the 'from' method a single time`. За публикацию отвечает блок `catalog {}` в `build.gradle`.
 
 ### build.gradle
 
@@ -100,7 +94,7 @@ dependencyResolutionManagement {
             from("com.mycompany:my-version-catalog:1.0.0")
 
             // Переопределить версию
-            version("spring-boot", "3.5.4")
+            version("spring-boot", "4.1.0")
 
             // Добавить библиотеку, которой нет в каталоге
             library("my-custom-lib", "com.mycompany:custom-lib:2.0.0")
@@ -125,15 +119,15 @@ dependencyResolutionManagement {
 
 ```properties
 # gradle.properties
-spring_boot_version=3.5.3
-jackson_version=2.18.3
+spring_boot_version=4.1.0
+jackson_version=3.2.1
 ```
 
 ```groovy
 // build.gradle
 dependencies {
     implementation "org.springframework.boot:spring-boot-starter-web:$spring_boot_version"
-    implementation "com.fasterxml.jackson.core:jackson-databind:$jackson_version"
+    implementation "tools.jackson.core:jackson-databind:$jackson_version"
 }
 ```
 
@@ -141,12 +135,12 @@ dependencies {
 
 ```toml
 [versions]
-spring-boot = "3.5.3"
-jackson = "2.18.3"
+spring-boot = "4.1.0"
+jackson = "3.2.1"
 
 [libraries]
 spring-boot-starter-web = { module = "org.springframework.boot:spring-boot-starter-web", version.ref = "spring-boot" }
-jackson-databind = { module = "com.fasterxml.jackson.core:jackson-databind", version.ref = "jackson" }
+jackson-databind = { module = "tools.jackson.core:jackson-databind", version.ref = "jackson" }
 ```
 
 ```groovy
@@ -162,10 +156,10 @@ dependencies {
 
 ```groovy
 ext {
-    springBootVersion = "3.5.3"
+    springBootVersion = "4.1.0"
     deps = [
         springBootWeb: "org.springframework.boot:spring-boot-starter-web:${springBootVersion}",
-        jackson: "com.fasterxml.jackson.core:jackson-databind:2.18.3"
+        jackson: "tools.jackson.core:jackson-databind:3.2.1"
     ]
 }
 
@@ -184,7 +178,7 @@ dependencies {
 ```kotlin
 // buildSrc/src/main/kotlin/Dependencies.kt
 object Versions {
-    const val springBoot = "3.5.3"
+    const val springBoot = "4.1.0"
 }
 object Deps {
     const val springBootWeb = "org.springframework.boot:spring-boot-starter-web:${Versions.springBoot}"
@@ -210,34 +204,30 @@ object Deps {
 ### 1. Один каталог для проекта
 
 ```groovy
-// Правильно — один каталог libs
-dependencyResolutionManagement {
-    versionCatalogs {
-        libs {
-            from(files("gradle/libs.versions.toml"))
-        }
-    }
-}
+// Правильно — settings.gradle пустой: gradle/libs.versions.toml подхватывается автоматически
+rootProject.name = "order-service"
 
 // Обычно не нужно — несколько каталогов усложняют
 // testLibs, infraLibs, etc.
 ```
+
+Явный `versionCatalogs { libs { from(files(...)) } }` нужен только когда файл лежит вне дефолтного пути (например, в submodule `build-config/`). Для дефолтного пути это ошибка сборки.
 
 ### 2. Версии — в [versions], не inline
 
 ```toml
 # Правильно — версия объявлена один раз, переиспользуется
 [versions]
-jackson = "2.18.3"
+jackson = "3.2.1"
 
 [libraries]
-jackson-databind = { module = "com.fasterxml.jackson.core:jackson-databind", version.ref = "jackson" }
-jackson-annotations = { module = "com.fasterxml.jackson.core:jackson-annotations", version.ref = "jackson" }
+jackson-databind = { module = "tools.jackson.core:jackson-databind", version.ref = "jackson" }
+jackson-core = { module = "tools.jackson.core:jackson-core", version.ref = "jackson" }
 
 # Неправильно — версия дублируется
 [libraries]
-jackson-databind = { module = "com.fasterxml.jackson.core:jackson-databind", version = "2.18.3" }
-jackson-annotations = { module = "com.fasterxml.jackson.core:jackson-annotations", version = "2.18.3" }
+jackson-databind = { module = "tools.jackson.core:jackson-databind", version = "3.2.1" }
+jackson-core = { module = "tools.jackson.core:jackson-core", version = "3.2.1" }
 ```
 
 Исключение: если зависимость уникальная и версия нигде не переиспользуется, inline допустим.
@@ -273,19 +263,19 @@ max-heap-size = "2g"                   # Это не зависимость
 ```toml
 [versions]
 # Spring Boot
-spring-boot = "3.5.3"
+spring-boot = "4.1.0"
 
 # Serialization
-jackson = "2.18.3"
-protobuf = "4.29.3"
+jackson = "3.2.1"
+protobuf = "4.35.1"
 
 # Database
-flyway = "11.13.0"
-postgresql = "42.7.5"
+flyway = "13.2.0"
+postgresql = "42.7.13"
 
 # Testing
-testcontainers = "1.20.6"
-instancio = "5.3.1"
+testcontainers = "2.0.5"
+instancio = "5.6.0"
 ```
 
 ### 6. Комментарии для неочевидного
@@ -293,7 +283,7 @@ instancio = "5.3.1"
 ```toml
 [versions]
 # Используется в openApi.gradle для генерации кода
-open-api-generator = "7.11.0"
+open-api-generator = "7.14.0"
 
 # Версия должна совпадать с runtime-версией в Docker (см. compose.yml)
 clickhouse-jdbc = "0.9.8"
@@ -306,15 +296,15 @@ clickhouse-jdbc = "0.9.8"
 ```toml
 # Неправильно — эти версии уже управляются Spring Boot BOM
 [versions]
-jackson = "2.18.3"
-postgresql = "42.7.5"
-logback = "1.5.16"
+jackson = "3.2.1"
+postgresql = "42.7.13"
+logback = "1.5.34"
 
 # Правильно — в каталоге только то, чем BOM НЕ управляет
 [versions]
-spring-boot = "3.5.3"          # сам BOM
-mapstruct = "1.6.4"            # нет в Spring Boot BOM
-instancio = "5.3.1"            # нет в Spring Boot BOM
+spring-boot = "4.1.0"          # сам BOM
+mapstruct = "1.6.3"            # нет в Spring Boot BOM
+instancio = "5.6.0"            # нет в Spring Boot BOM
 ```
 
 ## Anti-Patterns
@@ -347,15 +337,15 @@ lombok = ["lombok"]  # нужен compileOnly + annotationProcessor, бандл 
 ```toml
 # Anti-pattern — не нужно strictly для каждой зависимости
 [versions]
-spring-boot = { strictly = "3.5.3" }
-jackson = { strictly = "2.18.3" }
-lombok = { strictly = "1.18.36" }
+spring-boot = { strictly = "4.1.0" }
+jackson = { strictly = "3.2.1" }
+lombok = { strictly = "1.18.46" }
 
 # Правильно — strictly только когда есть конкретная причина
 [versions]
-spring-boot = "3.5.3"
-jackson = "2.18.3"
-log4j = { strictly = "2.24.3" }  # strictly из-за CVE в старых версиях
+spring-boot = "4.1.0"
+jackson = "3.2.1"
+log4j = { strictly = "2.26.1" }  # strictly из-за CVE в старых версиях
 ```
 
 ## Инструменты
@@ -380,19 +370,25 @@ Renovate `renovate.json`:
 Плагин для автоматического обновления версий в TOML:
 
 ```groovy
-// settings.gradle
+// build.gradle (именно build, не settings — в settings-скрипте плагин не применяется)
 plugins {
-    id "nl.littlerobots.version-catalog-update" version "0.8.5"
+    id "nl.littlerobots.version-catalog-update" version "1.1.1"
 }
 ```
 
 ```bash
-# Проверить доступные обновления
+# Обновить libs.versions.toml сразу
+./gradlew versionCatalogUpdate
+
+# Или в два шага: сначала собрать обновления в gradle/libs.versions.updates.toml,
+# отредактировать его руками, оставив только нужное
 ./gradlew versionCatalogUpdate --interactive
 
-# Обновить TOML-файл
-./gradlew versionCatalogUpdate
+# затем применить отобранное к libs.versions.toml
+./gradlew versionCatalogApplyUpdates
 ```
+
+> Пока `libs.versions.updates.toml` не применён, обычный `versionCatalogUpdate` падает: `... libs.versions.updates.toml exists, did you mean to run the versionCatalogApplyUpdates task to apply the updates?`
 
 ### gradle init
 

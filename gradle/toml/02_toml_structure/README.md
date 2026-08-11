@@ -27,8 +27,8 @@ enabled = true
 
 ```toml
 [versions]
-spring-boot = "3.5.3"
-jackson = "2.18.3"
+spring-boot = "4.1.0"
+jackson = "3.2.1"
 
 [libraries]
 spring-boot-starter = { module = "org.springframework.boot:spring-boot-starter", version.ref = "spring-boot" }
@@ -61,13 +61,13 @@ spring-boot-starter = { group = "org.springframework.boot", name = "spring-boot-
 
 ```toml
 [versions]
-spring-boot = "3.5.3"
-jackson = "2.18.3"
-lombok = "1.18.36"
+spring-boot = "4.1.0"
+jackson = "3.2.1"
+lombok = "1.18.46"
 
 [libraries]
 spring-boot-starter-web = { module = "org.springframework.boot:spring-boot-starter-web", version.ref = "spring-boot" }
-jackson-databind = { module = "com.fasterxml.jackson.core:jackson-databind", version.ref = "jackson" }
+jackson-databind = { module = "tools.jackson.core:jackson-databind", version.ref = "jackson" }
 lombok = { module = "org.projectlombok:lombok", version.ref = "lombok" }
 
 [bundles]
@@ -91,7 +91,7 @@ dependencies {
 }
 
 // Доступ к строковому значению версии
-println libs.versions.spring.boot.get()             // [versions] → "3.5.3"
+println libs.versions.spring.boot.get()             // [versions] → "4.1.0"
 ```
 
 ## Расположение файла
@@ -130,15 +130,22 @@ dependencyResolutionManagement {
 ```groovy
 dependencyResolutionManagement {
     versionCatalogs {
-        libs {
-            from(files("gradle/libs.versions.toml"))
-        }
+        // libs объявлять не нужно — gradle/libs.versions.toml подхватывается сам
         testLibs {
             from(files("gradle/test-libs.versions.toml"))
         }
     }
 }
 ```
+
+> **Внимание.** Если файл лежит на дефолтном пути `gradle/libs.versions.toml`, не пиши для него `libs { from(files(...)) }` — Gradle уже импортировал его сам, и второй вызов `from` валит сборку:
+>
+> ```
+> Invalid catalog definition:
+>   - Problem: In version catalog libs, you can only call the 'from' method a single time.
+> ```
+>
+> Явный `from(files(...))` нужен только для файла вне дефолтного пути.
 
 ```groovy
 dependencies {
@@ -163,7 +170,7 @@ Gradle парсит TOML на фазе Initialization
         ▼
 Доступен в build.gradle как объект `libs`
         │
-        ├── libs.versions.spring.boot.get()    → String "3.5.3"
+        ├── libs.versions.spring.boot.get()    → String "4.1.0"
         ├── libs.spring.boot.starter.web       → Provider<MinimalExternalModuleDependency>
         ├── libs.plugins.spring.boot           → Provider<PluginDependency>
         └── libs.bundles.spring.web            → Provider<List<MinimalExternalModuleDependency>>
@@ -175,8 +182,8 @@ Gradle парсит TOML на фазе Initialization
 
 ```toml
 [versions]
-spring-boot = "3.5.3"
-flyway = "11.13.0"
+spring-boot = "4.1.0"
+flyway = "13.2.0"
 
 [plugins]
 spring-boot = { id = "org.springframework.boot", version.ref = "spring-boot" }
@@ -187,11 +194,11 @@ flyway = { id = "org.flywaydb.flyway", version.ref = "flyway" }
 
 ```toml
 [versions]
-jackson = "2.18.3"
-lombok = "1.18.36"
+jackson = "3.2.1"
+lombok = "1.18.46"
 
 [libraries]
-jackson-databind = { module = "com.fasterxml.jackson.core:jackson-databind", version.ref = "jackson" }
+jackson-databind = { module = "tools.jackson.core:jackson-databind", version.ref = "jackson" }
 lombok = { module = "org.projectlombok:lombok", version.ref = "lombok" }
 ```
 
@@ -199,18 +206,18 @@ lombok = { module = "org.projectlombok:lombok", version.ref = "lombok" }
 
 ```toml
 [versions]
-spring-boot = "3.5.3"
-jackson = "2.18.3"
-lombok = "1.18.36"
-testcontainers = "1.20.6"
+spring-boot = "4.1.0"
+jackson = "3.2.1"
+lombok = "1.18.46"
+testcontainers = "2.0.5"
 
 [libraries]
 spring-boot-starter-web = { module = "org.springframework.boot:spring-boot-starter-web", version.ref = "spring-boot" }
 spring-boot-starter-test = { module = "org.springframework.boot:spring-boot-starter-test", version.ref = "spring-boot" }
-jackson-databind = { module = "com.fasterxml.jackson.core:jackson-databind", version.ref = "jackson" }
+jackson-databind = { module = "tools.jackson.core:jackson-databind", version.ref = "jackson" }
 lombok = { module = "org.projectlombok:lombok", version.ref = "lombok" }
-testcontainers-postgresql = { module = "org.testcontainers:postgresql", version.ref = "testcontainers" }
-testcontainers-junit = { module = "org.testcontainers:junit-jupiter", version.ref = "testcontainers" }
+testcontainers-postgresql = { module = "org.testcontainers:testcontainers-postgresql", version.ref = "testcontainers" }
+testcontainers-junit = { module = "org.testcontainers:testcontainers-junit-jupiter", version.ref = "testcontainers" }
 
 [bundles]
 testcontainers = ["testcontainers-postgresql", "testcontainers-junit"]

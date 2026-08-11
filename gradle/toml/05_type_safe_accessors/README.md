@@ -18,7 +18,7 @@ Gradle генерирует type-safe accessors из TOML-файла автом�
 
 ```toml
 [versions]
-spring-boot = "3.5.3"
+spring-boot = "4.1.0"
 
 [libraries]
 spring-boot-starter = { module = "...", version.ref = "spring-boot" }
@@ -32,7 +32,7 @@ spring-boot = { id = "org.springframework.boot", version.ref = "spring-boot" }
 
 ```groovy
 // Versions — строковое значение версии
-libs.versions.spring.boot.get()           // → "3.5.3"
+libs.versions.spring.boot.get()           // → "4.1.0"
 
 // Libraries — провайдер зависимости
 libs.spring.boot.starter                   // → Provider<MinimalExternalModuleDependency>
@@ -104,7 +104,7 @@ dependencies {
     // Использовать библиотеку, но с другой версией
     implementation(libs.jackson.databind) {
         version {
-            strictly "2.17.0"
+            strictly "3.1.4"
         }
     }
 
@@ -214,7 +214,7 @@ build.gradle
 buildscript {
     dependencies {
         // libs доступен в script-плагинах, если они подключены через apply from:
-        classpath "org.openapitools:openapi-generator-gradle-plugin:${libs.versions.open.api.generator.plugin.get()}"
+        classpath "org.openapitools:openapi-generator-gradle-plugin:${libs.versions.open.api.generator.get()}"
     }
 }
 ```
@@ -224,36 +224,66 @@ buildscript {
 ### Проверить, что каталог загружен
 
 ```bash
-# Показать все доступные зависимости из каталога
+# Показать все зависимости, которые каталог отдал в compile classpath
 ./gradlew dependencies --configuration compileClasspath
 
-# Вывести значение конкретной версии
+# Убедиться, что расширение libs вообще создано (выведет: libs: extension 'libs')
 ./gradlew properties | grep -i "libs"
+```
+
+`properties` покажет только сам факт наличия расширения — значения версий оттуда не видны. Чтобы напечатать конкретную версию, заведи задачу:
+
+```groovy
+tasks.register("printVersions") {
+    doLast {
+        println "spring-boot: " + libs.versions.spring.boot.get()
+    }
+}
 ```
 
 ### Типичные ошибки
 
-**1. `libs` не найден**
-```
-Could not find method alias() for arguments [...]
-```
-Проверь, что TOML-файл указан в `settings.gradle` через `dependencyResolutionManagement.versionCatalogs`.
+Тексты приведены для Gradle 9.x, Groovy DSL.
 
-**2. Accessor не генерируется**
+**1. Каталог не подключён, а в `plugins {}` уже есть `alias()`**
 ```
-Unresolved reference: spring
+only alias(libs.plugins.someAlias) plugin identifiers where `libs` is a valid version catalog
 ```
-Проверь имя в TOML. Если есть опечатка — accessor не создастся. Выполни Gradle sync в IDE.
+Ошибка компиляции скрипта, а не выполнения. Проверь, что файл лежит в `gradle/libs.versions.toml` либо указан в `settings.gradle` через `dependencyResolutionManagement.versionCatalogs`.
 
-**3. alias() вне plugins {}**
+**2. Опечатка в алиасе библиотеки**
 ```
-The alias() method can only be called inside the plugins block
+Could not get unknown property 'springg' for extension 'libs' of type org.gradle.accessors.dm.LibrariesForLibs.
 ```
-`alias()` работает только в `plugins {}`. Для script-плагинов используй `apply plugin:`.
+В Kotlin DSL та же ситуация выглядит иначе — `Unresolved reference 'springg'`, и ловится ещё на этапе компиляции скрипта.
 
-**4. version.ref ссылается на несуществующую версию**
+**3. Опечатка в алиасе плагина**
 ```
-Version reference 'xxx' doesn't exist
+No such property: bot for class: org.gradle.accessors.dm.LibrariesForLibs$SpringPluginAccessors
+  Possible solutions: boot
+```
+Gradle подсказывает ближайшее корректное имя. После правки TOML выполни Gradle sync в IDE.
+
+**4. `alias()` вне блока `plugins {}`**
+```
+Could not find method alias() for arguments [valueof(PluginDependencyValueSource)] on root project 'order-service' of type org.gradle.api.Project.
+```
+А попытка сделать `apply plugin: libs.plugins.spring.boot` даёт своё:
+```
+Could not set unknown property 'plugin' for object of type org.gradle.api.internal.plugins.DefaultObjectConfigurationAction.
+```
+`alias()` работает только в `plugins {}`. Для script-плагинов используй `apply plugin:` с обычным строковым ID.
+
+**5. `version.ref` ссылается на несуществующую версию**
+```
+Invalid catalog definition:
+  - Problem: In version catalog libs, version reference 'lombokk' doesn't exist.
+    
+    Reason: Dependency 'org.projectlombok:lombok' references version 'lombokk' which doesn't exist.
+    
+    Possible solutions:
+      1. Declare 'lombokk' in the catalog.
+      2. Use one of the following existing versions: 'spring.boot'.
 ```
 Проверь, что версия объявлена в `[versions]` и имя совпадает точно.
 
