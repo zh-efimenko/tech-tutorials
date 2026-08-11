@@ -593,7 +593,7 @@ Agent-подход значительно быстрее для multi-file за�
 |-----------|-----------|
 | GitHub Copilot Pro | \$10/мес |
 | GitHub Copilot Business | \$19/мес |
-| Shell-GPT с GPT-4o | ~\$0.01–0.05 за запрос |
+| Shell-GPT с GPT-4o | \~\$0.01–0.05 за запрос |
 | Aider с Claude Sonnet | \$1–10 за сессию |
 | Claude Code с Opus | \$5–50 в день (интенсивно) |
 | Claude Code с Sonnet | \$1–10 в день |
