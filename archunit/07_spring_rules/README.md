@@ -177,6 +177,8 @@ classes()
 
 `areMetaAnnotatedWith` — проверяет не только прямую аннотацию, но и транзитивно через аннотации. `@Service` → `@Component`, поэтому класс с `@Service` попадёт в выборку.
 
+> **Внимание:** в эту же выборку попадёт и класс с `@SpringBootApplication` — он мета-аннотирован `@Configuration` → `@Component`, а живёт в корневом пакете. Либо добавляй `..config..`-подобный пакет в список, либо исключай точку входа: `.and().areNotAnnotatedWith(SpringBootApplication.class)`.
+
 ## Практика
 
 1. Найди в проекте все `@Autowired` поля и напиши правило, которое их запрещает

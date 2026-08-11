@@ -43,7 +43,7 @@ static final ArchRule services_should_not_use_jpa_directly =
 @ArchTest
 static final ArchRule no_system_out_println =
     noClasses()
-        .should().callMethod(System.class, "out")
+        .should().accessField(System.class, "out")
         .as("Use a logger instead of System.out");
 
 // Запрет использования устаревшего класса
@@ -112,7 +112,9 @@ static final ArchRule no_cycles_between_packages =
         .as("No cyclic dependencies between top-level packages");
 ```
 
-`matching("com.example.(*)..")` — `(*)` захватывает первый сегмент пакета и группирует классы по нему. Получается "срез" (slice): один срез = один пакет первого уровня.
+`matching("com.example.(*)..")` — `(*)` захватывает следующий сегмент пакета и группирует классы по нему. Получается "срез" (slice): один срез = один пакет.
+
+> **Важно:** паттерн должен указывать на уровень, где реально расходятся слои. Для базового пакета `com.example.bet` шаблон `com.example.(*)..` даст ровно один срез `bet` — циклов между срезами не будет никогда, и тест всегда зелёный. Нужен `com.example.bet.(*)..`.
 
 ```
 com.example.service    → срез "service"
@@ -134,25 +136,35 @@ SlicesRuleDefinition.slices()
 ### Игнорировать определённые срезы
 
 ```java
+import com.tngtech.archunit.base.DescribedPredicate;
+
 SlicesRuleDefinition.slices()
     .matching("com.example.(*)..")
-    .that(not(nameMatching("test")))  // исключить срез "test"
+    .that(DescribedPredicate.describe("not the 'test' slice",
+        slice -> !slice.getNamePart(1).equals("test")))  // исключить срез "test"
     .should().beFreeOfCycles()
 ```
+
+> **Важно:** предикаты по имени (`nameMatching`, `resideInAPackage`) здесь не подойдут — `Slice` не реализует `HasName`, компилятор не выведет типы. Срез фильтруется через `getNamePart(N)`, где `N` — номер группы `(*)` из `matching(..)`, нумерация с 1.
 
 ## Зависимости через поля vs через методы
 
 ArchUnit различает виды зависимостей:
 
 ```java
-// Только через поля (например, @Autowired поля)
-noClasses()
-    .that().resideInAPackage("..controller..")
-    .should().haveAFieldOfType(resideInPackage("..repository.."))
+import static com.tngtech.archunit.core.domain.JavaAccess.Predicates.targetOwner;
+import static com.tngtech.archunit.core.domain.JavaClass.Predicates.resideInAPackage;
+import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
+import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noFields;
 
-// Через вызовы методов (обращение к статическим методам утилит)
+// Только через поля (например, @Autowired поля) — субъектом становятся поля, не классы
+noFields()
+    .that().areDeclaredInClassesThat().resideInAPackage("..controller..")
+    .should().haveRawType(resideInAPackage("..repository.."))
+
+// Через вызовы методов (обращение к методам внутренних классов)
 noClasses()
-    .should().callMethodWhere(target().getDeclaringClass().resideInPackage("..internal.."))
+    .should().callMethodWhere(targetOwner(resideInAPackage("..internal..")))
 ```
 
 Для большинства правил `dependOnClassesThat` достаточен — он покрывает все виды зависимостей. Конкретные виды нужны для точечных правил.
@@ -160,7 +172,7 @@ noClasses()
 ## Практика
 
 1. Напиши правило: классы в `..domain..` не зависят от `org.springframework..`
-2. Создай правило против `System.out.println` — используй `callMethod`
+2. Создай правило против `System.out.println` — `out` это поле, поэтому нужен `accessField`, а не `callMethod`; проверь оба варианта на классе с `System.out.println` и убедись, что `callMethod` молча зелёный
 3. Проверь наличие циклов между пакетами своего сервиса через `beFreeOfCycles()`
 4. Напиши правило `onlyDependOnClassesThat` для domain-классов — начни с минимального набора пакетов и добавляй, пока тест не позеленеет
 5. Запрети использование `java.util.Date` и `java.sql.Date` (замена: `java.time.*`):

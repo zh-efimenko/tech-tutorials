@@ -30,10 +30,14 @@ static final ArchRule controllers_should_not_use_repositories =
 
 ```
 Architecture Violation [Priority: MEDIUM] - Rule 'no classes that reside in a package '..controller..'
-should depend on classes that reside in a package '..repository..'':
-  Class <com.example.controller.BetController> has a field of type
-  <com.example.repository.BetRepository> in (BetController.java:12)
+should depend on classes that reside in a package '..repository..'' was violated (2 times):
+Field <com.example.controller.BetController.betRepository> has type
+<com.example.repository.BetRepository> in (BetController.java:0)
+Method <com.example.controller.BetController.stats()> calls method
+<com.example.repository.BetRepository.findAll()> in (BetController.java:24)
 ```
+
+Одно нарушение архитектуры даёт несколько строк: поле, параметр конструктора, каждый вызов метода — это отдельные зависимости. Для полей и сигнатур номер строки в байткоде отсутствует, поэтому в скобках стоит `:0`.
 
 ## Что ArchUnit умеет проверять
 

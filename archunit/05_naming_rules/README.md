@@ -131,22 +131,30 @@ static final ArchRule dto_classes_naming =
 ## Именование методов
 
 ```java
-// Методы @Scheduled должны быть void и называться по схеме schedule* или process*
+// @Scheduled-методы должны возвращать void
 @ArchTest
-static final ArchRule scheduled_methods_naming =
+static final ArchRule scheduled_methods_return_void =
     methods()
         .that().areAnnotatedWith(Scheduled.class)
         .should().haveRawReturnType(void.class)
         .as("@Scheduled methods must return void");
+
+// ...и называться по схеме schedule* / process* / settle*
+@ArchTest
+static final ArchRule scheduled_methods_naming =
+    methods()
+        .that().areAnnotatedWith(Scheduled.class)
+        .should().haveNameMatching("(schedule|process|settle).*")
+        .as("@Scheduled methods must be named schedule*, process* or settle*");
 ```
 
-> **Важно:** ArchUnit проверяет метаданные метода через байткод, но не сигнатуру по регексу напрямую. Для именования методов нужны кастомные условия (урок 8).
+`haveNameMatching` работает и для методов, и для полей — кастомные условия (урок 8) нужны только там, где проверка выходит за пределы имени и сигнатуры.
 
 ## Именование пакетов
 
 ArchUnit не проверяет имена пакетов напрямую, но через слои можно убедиться, что пакеты с определёнными именами существуют и используются правильно.
 
-Имена пакетов проверяются косвенно: если правило `allowEmptyShould(false)` и предикат `resideInAPackage("..controller..")` падает с "no classes found" — значит пакета с таким именем нет.
+Имена пакетов проверяются косвенно: если предикат `resideInAPackage("..controller..")` не находит классов, правило падает с «failed to check any classes» — значит пакета с таким именем нет.
 
 ## Таблица методов именования
 
@@ -174,5 +182,5 @@ ArchUnit не проверяет имена пакетов напрямую, н�
 - Двусторонние правила (имя ↔ пакет) дают полную гарантию: ни неправильного имени, ни неправильного размещения
 - `haveSimpleNameEndingWith` работает с простым именем класса, `haveNameMatching` — с полным именем включая пакет
 - `orShould()` позволяет описать несколько допустимых вариантов именования для одной категории классов
-- `allowEmptyShould(false)` критичен для правил именования — иначе переименование пакета делает правило невидимым
+- Правило падает, если `.that()` не нашёл ни одного класса — примеры про `..port..` и `..dto..` в проекте без таких пакетов будут красными, и это правильное поведение, а не поломка
 - Антипаттерны именования (IUserService, BetManager, OrderHelper) можно запретить через `haveSimpleNameNotStartingWith` / `haveSimpleNameNotEndingWith`

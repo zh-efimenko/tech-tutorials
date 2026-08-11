@@ -19,7 +19,8 @@ import com.tngtech.archunit.base.DescribedPredicate;
 import com.tngtech.archunit.core.domain.JavaClass;
 
 // Предикат: класс имеет более одного конструктора
-DescribedPredicate<JavaClass> hasMoreThanOneConstructor =
+// static — потому что дальше на предикат ссылается static final поле @ArchTest
+static final DescribedPredicate<JavaClass> hasMoreThanOneConstructor =
     new DescribedPredicate<JavaClass>("have more than one constructor") {
         @Override
         public boolean test(JavaClass javaClass) {
@@ -32,10 +33,11 @@ DescribedPredicate<JavaClass> hasMoreThanOneConstructor =
 static final ArchRule service_classes_should_have_single_constructor =
     noClasses()
         .that().resideInAPackage("..service..")
-        .and(hasMoreThanOneConstructor)
-        .should().beAnnotatedWith(Service.class)
+        .should(have(hasMoreThanOneConstructor))
         .as("Service classes with multiple constructors are a smell — use @RequiredArgsConstructor");
 ```
+
+`ArchConditions.have(predicate)` (и парный `be(predicate)`) превращает предикат в условие — это способ использовать один и тот же `DescribedPredicate` и в `.that()`, и в `.should()`. Импорт: `import static com.tngtech.archunit.lang.conditions.ArchConditions.have;`
 
 ### Предикат для JavaMethod
 
@@ -43,7 +45,7 @@ static final ArchRule service_classes_should_have_single_constructor =
 import com.tngtech.archunit.core.domain.JavaMethod;
 
 // Метод возвращает Optional
-DescribedPredicate<JavaMethod> returnsOptional =
+static final DescribedPredicate<JavaMethod> returnsOptional =
     new DescribedPredicate<JavaMethod>("return Optional") {
         @Override
         public boolean test(JavaMethod method) {
@@ -62,13 +64,13 @@ methods()
 ### Комбинирование предикатов
 
 ```java
-DescribedPredicate<JavaClass> isService =
+static final DescribedPredicate<JavaClass> isService =
     DescribedPredicate.describe("annotated with @Service",
         c -> c.isAnnotatedWith(Service.class));
 
-DescribedPredicate<JavaClass> isAbstract =
+static final DescribedPredicate<JavaClass> isAbstract =
     DescribedPredicate.describe("abstract",
-        JavaClass::isAbstract);
+        c -> c.getModifiers().contains(JavaModifier.ABSTRACT));
 
 // AND
 DescribedPredicate<JavaClass> isAbstractService = isService.and(isAbstract);
@@ -88,9 +90,10 @@ import com.tngtech.archunit.lang.ArchCondition;
 import com.tngtech.archunit.lang.ConditionEvents;
 import com.tngtech.archunit.lang.SimpleConditionEvent;
 import com.tngtech.archunit.core.domain.JavaClass;
+import com.tngtech.archunit.core.domain.JavaModifier;
 
 // Условие: класс не имеет публичных полей
-ArchCondition<JavaClass> haveNoPublicFields =
+static final ArchCondition<JavaClass> haveNoPublicFields =
     new ArchCondition<JavaClass>("have no public fields") {
         @Override
         public void check(JavaClass javaClass, ConditionEvents events) {
@@ -121,12 +124,12 @@ static final ArchRule services_have_no_public_fields =
 
 ```java
 // Условие: метод имеет @Transactional(readOnly = true)
-ArchCondition<JavaMethod> beReadOnlyTransactional =
+static final ArchCondition<JavaMethod> beReadOnlyTransactional =
     new ArchCondition<JavaMethod>("be annotated with @Transactional(readOnly = true)") {
         @Override
         public void check(JavaMethod method, ConditionEvents events) {
             boolean isReadOnly = method.getAnnotations().stream()
-                .filter(a -> a.getType().isAssignableTo(Transactional.class))
+                .filter(a -> a.getRawType().isAssignableTo(Transactional.class))
                 .anyMatch(a -> {
                     Object readOnly = a.get("readOnly").orElse(false);
                     return Boolean.TRUE.equals(readOnly);
@@ -170,6 +173,7 @@ ArchUnit поставляет многие предикаты через ста�
 ```java
 import static com.tngtech.archunit.core.domain.JavaClass.Predicates.*;
 import static com.tngtech.archunit.core.domain.properties.CanBeAnnotated.Predicates.*;
+import static com.tngtech.archunit.core.domain.properties.HasName.Predicates.*;
 
 // Класс является аннотацией
 assignableTo(Annotation.class)
@@ -184,12 +188,14 @@ nameMatching(".*Service")
 resideInAPackage("..service..")
 ```
 
+Предикаты лежат в разных классах, и типы у них разные: `assignableTo` и `resideInAPackage` — это `DescribedPredicate<JavaClass>`, `nameMatching` — `DescribedPredicate<HasName>`, `annotatedWith` — `DescribedPredicate<CanBeAnnotated>`. Сложить их в одну переменную типа `DescribedPredicate<JavaClass>` не получится; объявляй параметр как `DescribedPredicate<? super JavaClass>` или приводи через `.forSubtype()`.
+
 ## Пример: проверка конструктора Lombok
 
 ```java
 // Все @Service должны использовать @RequiredArgsConstructor (Lombok)
 // вместо явного конструктора с @Autowired параметрами
-DescribedPredicate<JavaClass> hasExplicitConstructorWithParams =
+static final DescribedPredicate<JavaClass> hasExplicitConstructorWithParams =
     new DescribedPredicate<JavaClass>("have explicit constructor with parameters") {
         @Override
         public boolean test(JavaClass javaClass) {
@@ -216,4 +222,5 @@ DescribedPredicate<JavaClass> hasExplicitConstructorWithParams =
 - `SimpleConditionEvent.violated(object, message)` — добавляет нарушение; `satisfied(object, message)` — подтверждает соответствие
 - Параметры аннотаций проверяются только через `ArchCondition` — стандартный `beAnnotatedWith` параметры игнорирует
 - `DescribedPredicate.describe("description", lambda)` — краткая форма для простых предикатов без анонимного класса
+- Предикаты и условия объявляются как `static` поля тест-класса: `@ArchTest`-правила тоже статические и из нестатического поля их не увидят
 - Кастомные условия комбинируются через `.and()` / `.or()`, описания обоих включаются в итоговое сообщение

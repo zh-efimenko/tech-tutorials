@@ -2,14 +2,15 @@
 
 ## Цель
 
-Научиться автоматически проверять архитектурные правила в Spring Boot 3 сервисах с помощью ArchUnit и JUnit 5 — чтобы нарушения выявлялись на этапе сборки, а не на ревью.
+Научиться автоматически проверять архитектурные правила в Spring Boot сервисах с помощью ArchUnit — чтобы нарушения выявлялись на этапе сборки, а не на ревью.
 
 ## Требования
 
-- Java 17+
-- Spring Boot 3.x
-- Gradle или Maven
-- JUnit 5 (входит в spring-boot-starter-test)
+- Java 17+ (примеры проверены на Java 25 LTS)
+- Spring Boot 3.5.x или 4.x
+- Gradle 9.x (поддерживается и 8.14+) или Maven 3.9+
+- ArchUnit 1.5.0
+- JUnit 5 (Spring Boot 3.x) или JUnit 6 (Spring Boot 4.x) — входит в `spring-boot-starter-test`
 - Базовое понимание слоёв приложения (controller / service / repository)
 
 ---

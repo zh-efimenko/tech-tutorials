@@ -9,30 +9,32 @@
 
 Решение — структурировать архитектурные тесты так же аккуратно, как бизнес-логику.
 
-## Базовый класс с общими настройками
+## Общие настройки через мета-аннотацию
+
+Настройки импорта не стоит повторять в каждом тест-классе. Выносить их нужно в собственную аннотацию, помеченную `@AnalyzeClasses`:
 
 ```java
-// Общий предок для всех архитектурных тестов
+// Своя аннотация со всеми настройками импорта
+@Retention(RetentionPolicy.RUNTIME)
 @AnalyzeClasses(
     packagesOf = Application.class,
     importOptions = ImportOption.DoNotIncludeTests.class
 )
-public abstract class BaseArchitectureTest {
-    // Здесь ничего нет — только настройки через аннотацию
-    // @AnalyzeClasses применяется к подклассам через наследование
+public @interface AnalyzeMainClasses {
 }
 ```
 
 ```java
-// Конкретный тест наследует настройки
-class LayerArchitectureTest extends BaseArchitectureTest {
+// Конкретный тест берёт настройки одной аннотацией
+@AnalyzeMainClasses
+class LayerArchitectureTest {
 
     @ArchTest
     static final ArchRule controllers_in_controller_package = ...;
 }
 ```
 
-> **Важно:** `@AnalyzeClasses` наследуется. Подкласс может переопределить аннотацию — тогда используется аннотация подкласса.
+> **Внимание:** через наследование от базового класса это не работает. `@AnalyzeClasses` не помечена `@Inherited`, и тест-класс, который рассчитывает получить её от абстрактного предка, движком просто не подхватывается — правила не запускаются, а сборка при этом зелёная. Самый опасный сценарий: набор правил есть, тесты «проходят», но не выполняется ни одно. В отчёте такого теста просто нет; единственный след — строчка в логе уровня WARN: `Class ... is not (meta-)annotated with @AnalyzeClasses and thus cannot run as a top level test`. Если в проекте нет других тестов, Gradle 9 дополнительно упадёт с `test task did not discover any tests`.
 
 ## Разделение по категориям
 
@@ -40,7 +42,7 @@ class LayerArchitectureTest extends BaseArchitectureTest {
 
 ```
 src/test/java/com/example/architecture/
-├── BaseArchitectureTest.java        ← общие настройки
+├── AnalyzeMainClasses.java          ← мета-аннотация с общими настройками
 ├── LayerRulesTest.java              ← правила слоёв
 ├── NamingRulesTest.java             ← именование
 ├── DependencyRulesTest.java         ← зависимости и циклы
@@ -75,14 +77,15 @@ public final class CommonRules {
 
     public static final ArchRule NO_SYSTEM_OUT =
         noClasses()
-            .should().callMethod(System.class, "out")
+            .should().accessField(System.class, "out")
             .as("Use SLF4J logger instead of System.out");
 }
 ```
 
 ```java
 // Использование в тест-классе
-class GeneralRulesTest extends BaseArchitectureTest {
+@AnalyzeMainClasses
+class GeneralRulesTest {
 
     @ArchTest
     static final ArchRule no_field_injection = CommonRules.NO_FIELD_INJECTION;
@@ -92,12 +95,12 @@ class GeneralRulesTest extends BaseArchitectureTest {
 }
 ```
 
-## Коллекции правил через ArchRules
+## Коллекции правил через ArchTests
 
-Несколько правил можно объединить в `ArchRules` и использовать как единое правило:
+Несколько правил можно объединить в `ArchTests` и подключить как единый набор:
 
 ```java
-import com.tngtech.archunit.junit.ArchRules;
+import com.tngtech.archunit.junit.ArchTests;
 
 public final class SpringAnnotationRules {
 
@@ -114,14 +117,17 @@ public final class SpringAnnotationRules {
 
 ```java
 // Подключение коллекции правил в тест-класс
-class SpringRulesTest extends BaseArchitectureTest {
+@AnalyzeMainClasses
+class SpringRulesTest {
 
     @ArchTest
-    static final ArchRules spring_rules = ArchRules.in(SpringAnnotationRules.class);
+    static final ArchTests spring_rules = ArchTests.in(SpringAnnotationRules.class);
 }
 ```
 
-Все поля с `@ArchTest` из `SpringAnnotationRules` будут запущены как отдельные тесты.
+Все поля с `@ArchTest` из `SpringAnnotationRules` будут запущены как отдельные тесты. Поля **без** `@ArchTest` игнорируются молча: `ArchTests.in(CommonRules.class)` для класса-библиотеки из предыдущего раздела не запустит ни одного правила и не выдаст ошибки. Либо помечай поля `@ArchTest`, либо подключай правила по одному, как в `GeneralRulesTest`.
+
+> **Внимание:** старое имя `ArchRules.in(..)` устарело — используй `ArchTests.in(..)`. Поведение одинаковое, но `ArchRules` остаётся в API только ради обратной совместимости.
 
 ## Разделение по модулям в многомодульном проекте
 
@@ -148,7 +154,7 @@ project/
 // bet-service/build.gradle
 dependencies {
     testImplementation project(':common-arch-rules')
-    testImplementation 'com.tngtech.archunit:archunit-junit5:1.3.0'
+    testImplementation 'com.tngtech.archunit:archunit-junit6:1.5.0'
 }
 ```
 
@@ -170,7 +176,7 @@ public static ArchRule layeredArchitectureRule(String basePackage) {
 ```
 
 ```java
-@AnalyzeClasses(packages = "com.example.bet")
+@AnalyzeClasses(packages = "com.example.bet", importOptions = ImportOption.DoNotIncludeTests.class)
 class BetServiceArchTest {
 
     @ArchTest
@@ -197,18 +203,18 @@ static final ArchRule domain_classes_must_not_depend_on_spring = ...;
 
 ## Практика
 
-1. Создай `BaseArchitectureTest` с `@AnalyzeClasses(packagesOf = Application.class)` и перенеси все существующие тесты в подклассы
+1. Создай мета-аннотацию `@AnalyzeMainClasses` с `@AnalyzeClasses(packagesOf = Application.class)` и повесь её на все существующие тест-классы
 2. Разбей правила на классы: `LayerRulesTest`, `NamingRulesTest`, `SpringRulesTest`
 3. Выдели `CommonRules` с 3-5 правилами, которые переиспользуются в нескольких тест-классах
-4. Попробуй `ArchRules.in(CommonRules.class)` — убедись, что все правила из класса запускаются
+4. Попробуй `ArchTests.in(CommonRules.class)` — сначала без `@ArchTest` на полях `CommonRules` (убедись, что не запускается ничего и ошибки нет), потом с `@ArchTest`
 5. Переименуй все поля в snake_case с именем-утверждением — посмотри, как изменился JUnit-отчёт
 6. Если проект многомодульный — вынеси общие правила в отдельный Gradle-модуль
 
 ## Итоги урока
 
-- `@AnalyzeClasses` наследуется — базовый класс задаёт настройки для всех подклассов
+- `@AnalyzeClasses` не наследуется от базового класса — общие настройки выносятся в собственную мета-аннотацию, иначе тесты молча не запускаются
 - Разделение по файлам (слои, именование, зависимости, Spring) упрощает навигацию и поиск нужного правила
 - Статические поля `public static final ArchRule` в отдельных классах — переиспользуемая библиотека правил
-- `ArchRules.in(Class)` подключает все `@ArchTest`-поля из другого класса как единый набор правил
+- `ArchTests.in(Class)` подключает все `@ArchTest`-поля из другого класса как единый набор правил (старое имя `ArchRules` устарело)
 - Имя поля `@ArchTest` становится именем теста в JUnit-отчёте — используй snake_case с читабельным утверждением
 - Параметризованные правила через статические методы позволяют описать один шаблон для нескольких сервисов

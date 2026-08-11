@@ -180,55 +180,69 @@ betService.getFields().forEach(field -> {
 
 `JavaClass` — основной объект для рефлексии в ArchUnit. Можно получить поля, методы, аннотации, суперкласс, интерфейсы, пакет.
 
-## Приоритет нарушений
-
-По умолчанию все нарушения имеют приоритет `MEDIUM`. Можно изменить:
+## Описание правила: as и because
 
 ```java
 ArchRule rule = noClasses()
         .that().resideInAPackage("..controller..")
         .should().dependOnClassesThat().resideInAPackage("..repository..")
         .as("Controllers must not access repositories directly")  // описание
-        .because("Business logic belongs in the service layer")    // причина
-        .allowEmptyShould(false);                                  // падать, если нет субъектов
+        .because("Business logic belongs in the service layer");   // причина
 ```
 
 `.as()` — переопределяет стандартное сообщение об ошибке.
 `.because()` — добавляет пояснение в сообщение об ошибке.
-`.allowEmptyShould(false)` — падать, если предикат не нашёл ни одного класса (защита от ложных успехов).
 
-## allowEmptyShould: важная настройка
+Сообщение при нарушении выглядит так:
 
-По умолчанию `allowEmptyShould(true)` — если предикат ничего не нашёл, тест зелёный. Это опасно:
+```
+Architecture Violation [Priority: MEDIUM] - Rule 'Controllers must not access repositories
+directly, because Business logic belongs in the service layer' was violated (1 times):
+```
+
+Приоритет задаётся не на правиле, а на его старте — через `ArchRuleDefinition.priority(..)` (урок 10).
+
+## allowEmptyShould: защита от ложных успехов
+
+Правило, чей `.that()` не нашёл ни одного класса, по умолчанию **падает**:
 
 ```java
-// Если пакет "..controller.." не существует — тест молча зелёный
+// Если пакета "..controller.." не существует — тест красный, а не зелёный
 noClasses()
     .that().resideInAPackage("..controller..")
     .should().dependOnClassesThat().resideInAPackage("..repository..");
 ```
 
-Переименовали пакет? Правило больше не работает, но тест проходит. Решение:
-
-```java
-// Глобально для всех правил через архивный файл (урок 10)
-// Или явно для критичных правил:
-.allowEmptyShould(false)
+```
+Rule 'no classes that reside in a package '..controller..' should depend on classes that
+reside in a package '..repository..'' failed to check any classes. This means either that
+no classes have been passed to the rule at all, or that no classes passed to the rule
+matched the `that()` clause.
 ```
 
-Или использовать глобальную настройку в `archunit.properties`:
+Это защита от ситуации «переименовали пакет — правило молча перестало проверять что-либо».
+
+Иногда пустой результат легитимен (правило написано впрок, модуль ещё не создан). Тогда разреши его точечно:
+
+```java
+.allowEmptyShould(true)
+```
+
+Или глобально, для всех правил, в `archunit.properties`:
 
 ```properties
 # src/test/resources/archunit.properties
-archunit.allowEmptyShould=false
+archRule.failOnEmptyShould=false
 ```
+
+> **Внимание:** ключи в `archunit.properties` пишутся без префикса `archunit.`. Префикс нужен только когда то же свойство передаётся как system property: `-Darchunit.archRule.failOnEmptyShould=false`. Ключ с лишним префиксом не вызовет ошибки — он просто будет проигнорирован.
 
 ## Практика
 
 1. Напиши правило с субъектом `fields()`, предикатом по аннотации `@Autowired` и условием `should().bePrivate()`
 2. Создай правило `methods().that().haveNameMatching("get.*").should().bePublic()` — что оно проверяет?
 3. Добавь к любому правилу `.as("...")` и `.because("...")` — посмотри, как изменится сообщение при нарушении
-4. Попробуй `noClasses().that().resideInAPackage("..nonexistent..").should()...` без `.allowEmptyShould(false)` — тест зелёный? Добавь настройку и убедись, что падает
+4. Попробуй `noClasses().that().resideInAPackage("..nonexistent..").should()...` — убедись, что тест падает с «failed to check any classes»; добавь `.allowEmptyShould(true)` и убедись, что стал зелёным
 5. Используй `JavaClass` API напрямую: загрузи классы, получи `BetService`, выведи все его зависимости
 6. Напиши правило с `or()` — классы в пакете `service` или `usecase` должны быть аннотированы `@Service`
 
@@ -239,4 +253,4 @@ archunit.allowEmptyShould=false
 - `..package..` — wildcards в именах пакетов: `..` означает любое количество подпакетов
 - Предикаты комбинируются через `.and()` / `.or()` для сложных фильтров
 - `.as()` задаёт читабельное название правила, `.because()` объясняет причину в сообщении об ошибке
-- `allowEmptyShould(false)` обязателен для критичных правил — иначе переименование пакета делает правило невидимым
+- Правило с пустым результатом `.that()` падает по умолчанию — переименование пакета не превратит правило в молчаливо зелёное; `allowEmptyShould(true)` нужен только там, где пустой результат легитимен
