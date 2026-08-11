@@ -26,3 +26,6 @@ generated
 
 ### IntelliJ HTTP Client ###
 http-client.private.env.json
+
+### Claude Code ###
+.claude/settings.local.json
