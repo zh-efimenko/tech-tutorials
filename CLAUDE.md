@@ -8,12 +8,13 @@
 
 | Директория | Технология | Уроков |
 |---|---|---|
-| `archunit/` | ArchUnit — архитектурные тесты Java/Spring | 10 |
-| `clickhouse/` | ClickHouse — колоночная СУБД | 11 |
-| `gradle/toml/` | Gradle Version Catalogs (TOML) | 8 |
-| `hazelcast/` | Hazelcast — in-memory data grid | 12 |
-| `spring-docker-compose/` | Spring Boot Docker Compose Integration | 10 |
-| `AI/` | Гайды по MCP и промптингу (не курс) | — |
+| `archunit` | ArchUnit — архитектурные тесты Java/Spring | 10 |
+| `clickhouse` | ClickHouse — колоночная СУБД | 11 |
+| `gradle/toml` | Gradle Version Catalogs (TOML) | 8 |
+| `graph-databases` | Neo4j — графовые БД, Cypher, GDS, GraphRAG (шесть треков) | 39 |
+| `hazelcast` | Hazelcast — in-memory data grid | 12 |
+| `spring-docker-compose` | Spring Boot Docker Compose Integration | 10 |
+| `AI` | Гайды по MCP и промптингу (не курс) | — |
 
 ## Структура каждого курса
 
@@ -66,7 +67,7 @@
 
 **Примеры кода:** реалистичные (аналитика, ставки, пользователи, события), рабочие (можно скопировать и запустить). SQL — ключевые слова UPPERCASE, таблицы/колонки lowercase.
 
-**Версии в примерах:** проверять запросом к реестру, а не по памяти — `maven-metadata.xml` на repo1.maven.org и plugins.gradle.org, `services.gradle.org/versions/current` для Gradle. Модель уверенно называет версии, которых не существует: в `gradle/toml/` до проверки стояла несуществующая `mapstruct 1.6.4`. Апгрейд мажорной версии проверять и на переезд координат: Spring Boot 4 → Jackson 3 в группе `tools.jackson`, `starter-aop` → `starter-aspectj`; Testcontainers 2 → `org.testcontainers:testcontainers-postgresql`.
+**Версии в примерах:** проверять запросом к реестру, а не по памяти — `maven-metadata.xml` на repo1.maven.org и plugins.gradle.org, `services.gradle.org/versions/current` для Gradle. Модель уверенно называет версии, которых не существует: в `gradle/toml` до проверки стояла несуществующая `mapstruct 1.6.4`. Апгрейд мажорной версии проверять и на переезд координат: Spring Boot 4 → Jackson 3 в группе `tools.jackson`, `starter-aop` → `starter-aspectj`; Testcontainers 2 → `org.testcontainers:testcontainers-postgresql`.
 
 **Тексты ошибок и вывод команд:** воспроизводить на актуальной версии инструмента и копировать фактический вывод. Сообщения Gradle/CLI меняются между версиями, а в уроке они подаются как точное ожидание — это то, обо что студент спотыкается первым.
 
