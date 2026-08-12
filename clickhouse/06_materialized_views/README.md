@@ -43,7 +43,7 @@ CREATE TABLE tutorial.page_stats_daily (
     page_url   String,
     views      UInt64,
     total_dur  UInt64,
-    max_dur    UInt32
+    max_dur    SimpleAggregateFunction(max, UInt32)
 ) ENGINE = SummingMergeTree()
 ORDER BY (event_date, page_url);
 
@@ -90,6 +90,8 @@ ORDER BY total_views DESC;
 ```
 
 **Важно**: `sum(views)` при чтении — потому что данные из разных INSERT-батчей могут быть ещё не смержены.
+
+> **Почему `max_dur` объявлена как `SimpleAggregateFunction(max, UInt32)`, а не просто `UInt32`.** SummingMergeTree при merge **складывает** все числовые колонки вне `ORDER BY` — без исключений. Обычный `UInt32` в этой колонке превратил бы максимум в сумму максимумов: две строки за `/home` с `max_dur` 30 и 10 после `OPTIMIZE ... FINAL` дали бы `40`, и запрос `max(max_dur)` вернул бы `40` вместо реальных `30`. Ошибка тихая — данные выглядят правдоподобно. `SimpleAggregateFunction(max, ...)` говорит движку схлопывать колонку через `max`, и получается `30`.
 
 ## Пример 2: Уникальные пользователи (AggregatingMergeTree)
 
@@ -138,6 +140,12 @@ ORDER BY event_date, total_views DESC;
 
 MV обрабатывает только **новые** INSERT-ы. Если в `page_views` уже есть данные, нужно заполнить целевую таблицу вручную:
 
+> **Порядок важен.** Бэкфилл читает `page_views` целиком, включая те строки, которые MV уже обработала после своего создания. Если ты вставлял данные из раздела «Что происходит при INSERT», сначала очисти целевую таблицу — иначе за `2026-04-01` получишь `/home` = 6 просмотров вместо 3:
+>
+> ```sql
+> TRUNCATE TABLE tutorial.page_stats_daily;
+> ```
+
 ```sql
 -- Вставить исторические данные в целевую таблицу
 INSERT INTO tutorial.page_stats_daily
@@ -150,6 +158,22 @@ SELECT
 FROM tutorial.page_views
 GROUP BY event_date, page_url;
 ```
+
+Для `country_users_daily` бэкфилл пишется иначе: в колонках типа `AggregateFunction` лежат не значения, а состояния, поэтому в `SELECT` идут `*State`-функции — те же самые, что в MV:
+
+```sql
+INSERT INTO tutorial.country_users_daily
+SELECT
+    event_date,
+    country,
+    count()                       AS views,
+    uniqState(user_id)            AS users,
+    quantileState(0.95)(duration) AS p95_dur
+FROM tutorial.page_views
+GROUP BY event_date, country;
+```
+
+Обычные `uniq()` / `quantile()` здесь не подойдут — типы не сойдутся. Без этого бэкфилла раздел «Чтение» выше вернёт ноль строк: MV наполняет целевую таблицу только новыми вставками.
 
 ## MV-цепочки
 
@@ -179,7 +203,29 @@ SELECT
     count()            AS views
 FROM tutorial.page_views
 GROUP BY event_date, event_hour, page_url;
+
+-- Вторая ступень: источник — не page_views, а page_stats_hourly
+CREATE TABLE tutorial.page_stats_from_hourly (
+    event_date Date,
+    page_url   String,
+    views      UInt64
+) ENGINE = SummingMergeTree()
+ORDER BY (event_date, page_url);
+
+CREATE MATERIALIZED VIEW tutorial.page_stats_from_hourly_mv
+TO tutorial.page_stats_from_hourly
+AS
+SELECT
+    event_date,
+    page_url,
+    sum(views) AS views
+FROM tutorial.page_stats_hourly
+GROUP BY event_date, page_url;
 ```
+
+Цепочка получается такая: `page_views` → `page_stats_hourly_mv` → `page_stats_hourly` → `page_stats_from_hourly_mv` → `page_stats_from_hourly`. Один INSERT в `page_views` проходит все ступени: запись, сделанная первой MV, для второй MV — обычный INSERT.
+
+> Ключевая деталь: `FROM` во второй MV указывает на промежуточную таблицу. Если обе MV читают `page_views`, это не цепочка, а два независимых представления.
 
 ## Управление MV
 

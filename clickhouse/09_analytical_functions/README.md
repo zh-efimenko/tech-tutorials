@@ -193,10 +193,21 @@ PRIMARY KEY code
 SOURCE(CLICKHOUSE(
     DB 'tutorial'
     TABLE 'countries'
+    USER 'default'
+    PASSWORD 'clickhouse'
 ))
-LAYOUT(FLAT())
+LAYOUT(COMPLEX_KEY_HASHED())
 LIFETIME(MIN 300 MAX 600);
 ```
+
+> `LAYOUT(HASHED())` со строковым ключом тоже сработает — ClickHouse молча подменит его на `ComplexKeyHashed` (видно в `system.dictionaries.type`). Полагаться на эту подмену не стоит: пиши тот layout, который действительно нужен.
+
+**Два места, где словарь ломается молча при создании и падает при первом `dictGet`:**
+
+| Что | Почему |
+|-----|--------|
+| `USER` / `PASSWORD` в `SOURCE` | Словарь ходит в свой же сервер как обычный клиент. Без учётки: `Code: 516. DB::Exception: default: Authentication failed: password is incorrect, or there is no user with such name` |
+| `COMPLEX_KEY_HASHED` вместо `FLAT` | `FLAT` требует числового ключа `UInt64`. Со строковым `code` первый же `dictGet` падает: `Code: 6. DB::Exception: Cannot parse string 'AU' as UInt64: syntax error at begin of string` — в сообщении фигурирует первая строка таблицы-источника, а не тот ключ, который ты искал. Для строковых и составных ключей — layout из семейства `COMPLEX_KEY_*` |
 
 ### Использование словаря
 
@@ -293,10 +304,14 @@ SELECT
     toStartOfWeek(today())             AS week_start,
     toStartOfHour(now())               AS hour_start,
     toStartOfInterval(now(), INTERVAL 15 MINUTE) AS interval_15m,
-    dateDiff('day', '2026-01-01', today())       AS days_since_ny,
+    dateDiff('day', toDate('2026-01-01'), today()) AS days_since_ny,
     addDays(today(), 30)               AS plus_30_days,
-    formatDateTime(now(), '%Y-%m-%d %H:%M') AS formatted;
+    formatDateTime(now(), '%Y-%m-%d %H:%i') AS formatted;
 ```
+
+Две ловушки в этом запросе:
+- `dateDiff` не приводит строку к дате сам: со строковым литералом получишь `Code: 43 ... Expected: Date[32] or DateTime[64], got: String`. Оборачивай в `toDate()`.
+- В `formatDateTime` минуты — это `%i`, а `%M` — полное имя месяца. Ошибки не будет, будет тихо неверный результат: `2026-08-11 20:August`.
 
 ## Функции для работы с JSON
 

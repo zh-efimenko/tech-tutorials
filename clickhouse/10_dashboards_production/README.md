@@ -9,12 +9,16 @@ Grafana — стандартный инструмент для дашбордо�
 ```yaml
 # Добавить в services в compose.yml
   grafana:
-    image: grafana/grafana:11.6.0
+    image: grafana/grafana:13.1.3
     container_name: grafana
     ports:
       - "3000:3000"
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=admin
+      # Плагин ClickHouse не входит в образ — Grafana ставит его при старте.
+      # GF_INSTALL_PLUGINS в Grafana 13 объявлена deprecated (пишет WARN в лог),
+      # актуальная переменная — GF_PLUGINS_PREINSTALL
+      - GF_PLUGINS_PREINSTALL=grafana-clickhouse-datasource
     volumes:
       - grafana-data:/var/lib/grafana
     depends_on:
@@ -29,11 +33,13 @@ Grafana — стандартный инструмент для дашбордо�
 
 1. Открыть `http://localhost:3000` (admin / admin)
 2. Connections → Data Sources → Add data source
-3. Выбрать **ClickHouse**
-4. Server address: `clickhouse` (имя сервиса в Docker), порт: `9000`
+3. Выбрать **ClickHouse** (появляется только если плагин `grafana-clickhouse-datasource` установлен — см. `GF_PLUGINS_PREINSTALL` выше)
+4. Server address: `clickhouse` (имя сервиса в Docker), порт: `9000`, Protocol: **Native**
 5. Database: `tutorial`
 6. Username: `default`, Password: `clickhouse`
-7. Save & Test
+7. Save & Test → «Data source is working»
+
+> Порт `9000` — нативный протокол, `8123` — HTTP. Порт и Protocol в настройках должны совпадать: `9000` + Native или `8123` + HTTP. Перепутанная пара даёт таймаут при Save & Test.
 
 ### Примеры запросов для дашбордов
 
@@ -51,6 +57,8 @@ ORDER BY time
 ```
 
 `$__fromTime` и `$__toTime` — переменные Grafana, привязанные к time picker.
+
+> **Первым делом выставь диапазон.** Данные курса лежат в `2026-01-01 .. 2026-03-31`, а time picker по умолчанию показывает последние 6 часов — все панели будут пустые с «No data». Поставь в правом верхнем углу абсолютный диапазон `2026-01-01` — `2026-04-01`, иначе будешь искать ошибку в SQL, которого она не касается.
 
 #### Таблица (Table)
 
@@ -151,35 +159,27 @@ WHERE metric IN (
     'MaxPartCountForPartition',
     'ReplicasMaxAbsoluteDelay',
     'Uptime',
-    'MarkCacheBytes',
-    'MarkCacheFiles'
+    'FilesystemCacheBytes',
+    'FilesystemCacheFiles'
 );
 ```
 
+> Состав `system.asynchronous_metrics` меняется от версии к версии, и отсутствующая метрика не даёт ошибки — запрос просто вернёт меньше строк. Смотри, что реально есть на твоей сборке: `SELECT metric FROM system.asynchronous_metrics ORDER BY metric`.
+
 ## Бэкапы
 
-### Встроенный механизм BACKUP/RESTORE
+### Сначала — настройка диска для бэкапов
 
-```sql
--- Бэкап таблицы на диск
-BACKUP TABLE tutorial.page_views
-TO Disk('backups', 'page_views_2026-04-05.zip');
+Без неё первый же `BACKUP` падает:
 
--- Бэкап всей базы
-BACKUP DATABASE tutorial
-TO Disk('backups', 'tutorial_full_2026-04-05.zip');
-
--- Восстановление
-RESTORE TABLE tutorial.page_views
-FROM Disk('backups', 'page_views_2026-04-05.zip');
+```
+Code: 318. DB::Exception: The 'backups.allowed_disk' configuration parameter
+is not set, cannot use 'Disk' backup engine. (INVALID_CONFIG_PARAMETER)
 ```
 
-### Настройка диска для бэкапов
-
-Добавить в конфигурацию ClickHouse (через volume в Docker):
+Создай рядом с `compose.yml` файл `config.d/backups.xml`:
 
 ```xml
-<!-- /etc/clickhouse-server/config.d/backups.xml -->
 <clickhouse>
     <storage_configuration>
         <disks>
@@ -196,19 +196,57 @@ FROM Disk('backups', 'page_views_2026-04-05.zip');
 </clickhouse>
 ```
 
+Подмонтируй его в контейнер — добавь в `compose.yml` в секцию `volumes` сервиса `clickhouse`:
+
+```yaml
+      - ./config.d/backups.xml:/etc/clickhouse-server/config.d/backups.xml
+```
+
+И перезапусти: `docker compose up -d`. Конфиги из `config.d/` подхватываются только при старте сервера.
+
+### Встроенный механизм BACKUP/RESTORE
+
+```sql
+-- Бэкап таблицы на диск
+BACKUP TABLE tutorial.page_views
+TO Disk('backups', 'page_views_2026-04-05.zip');
+
+-- Бэкап всей базы
+BACKUP DATABASE tutorial
+TO Disk('backups', 'tutorial_full_2026-04-05.zip');
+
+-- Восстановление рядом, под другим именем — так проверяют бэкап, не трогая рабочую таблицу
+RESTORE TABLE tutorial.page_views AS tutorial.page_views_restored
+FROM Disk('backups', 'page_views_2026-04-05.zip');
+```
+
+Восстановить поверх существующей таблицы с данными не выйдет:
+
+```
+Code: 608. DB::Exception: Cannot restore the table tutorial.page_views because it already
+contains some data. You can set structure_only=true or allow_non_empty_tables=true
+to overcome that in the way you want. (CANNOT_RESTORE_TABLE)
+```
+
+Это защита от случайного затирания. Если действительно нужно долить данные поверх — `RESTORE TABLE ... SETTINGS allow_non_empty_tables=true`, но учти, что строки не заменятся, а добавятся к имеющимся.
+
+Успешный `BACKUP` возвращает одну строку: `<uuid>  BACKUP_CREATED`.
+
 ### Бэкап через clickhouse-client
 
 ```bash
 # Экспорт в файл (альтернативный подход)
-docker exec clickhouse-local clickhouse-client \
+docker exec clickhouse clickhouse-client \
     --user default --password clickhouse \
     --query="SELECT * FROM tutorial.page_views FORMAT Native" > backup.native
 
 # Импорт из файла
-docker exec -i clickhouse-local clickhouse-client \
+docker exec -i clickhouse clickhouse-client \
     --user default --password clickhouse \
     --query="INSERT INTO tutorial.page_views FORMAT Native" < backup.native
 ```
+
+> `INSERT` не заменяет данные, а добавляет: импорт в непустую `page_views` удвоит её (1 000 000 → 2 000 000 строк), и дальше все агрегаты урока будут вдвое больше. Импортируй либо в пустую таблицу (`TRUNCATE TABLE tutorial.page_views` перед этим), либо в отдельную — `page_views_restored`.
 
 ## TTL — автоматическое удаление старых данных
 
@@ -223,15 +261,43 @@ PARTITION BY toYYYYMM(event_date)
 ORDER BY event_time
 TTL event_date + INTERVAL 90 DAY;
 
+-- Наполняем, иначе смотреть на работу TTL будет не на чем:
+-- половина строк заведомо старше 90 дней, половина — свежая
+INSERT INTO tutorial.logs
+SELECT today() - number % 200, now() - (number % 200) * 86400, 'log line ' || toString(number)
+FROM numbers(2000);
+
+-- Партиции до срабатывания TTL: заполнены все ~7 месяцев
+SELECT partition, sum(rows) FROM system.parts
+WHERE table = 'logs' AND active GROUP BY partition ORDER BY partition;
+
+-- TTL применяется при merge. Не ждать фонового — запустить принудительно:
+OPTIMIZE TABLE tutorial.logs FINAL;
+
+-- Теперь у партиций старше 90 дней sum(rows) = 0, у свежих — без изменений
+SELECT partition, sum(rows) FROM system.parts
+WHERE table = 'logs' AND active GROUP BY partition ORDER BY partition;
+
 -- Перемещение старых данных на медленный диск
 -- TTL event_date + INTERVAL 30 DAY TO DISK 'cold'
 
 -- Добавить/изменить TTL на существующую таблицу
-ALTER TABLE tutorial.page_views
+ALTER TABLE tutorial.logs
     MODIFY TTL event_date + INTERVAL 180 DAY;
 ```
 
+> **Не вешай TTL на `page_views`.** Данные курса сгенерированы за `2026-01-01 .. 2026-03-31`, и любой TTL, отсчитываемый от `today()`, снесёт часть из них — молча и в фоне, за десяток секунд после `ALTER`. Проверить, что попадёт под нож, до выполнения: `SELECT count() FROM tutorial.page_views WHERE event_date < today() - 180`. Снять TTL обратно можно (`ALTER TABLE ... REMOVE TTL`), а удалённые строки — нет.
+
 ## Пользователи и права
+
+Управление доступами из SQL по умолчанию выключено: у пользователя из `CLICKHOUSE_USER` нет права `ACCESS MANAGEMENT`, и первый же `CREATE USER` падает с `Code: 497. DB::Exception: default: Not enough privileges ... (ACCESS_DENIED)`. Включается переменной окружения в `compose.yml` (она уже там есть):
+
+```yaml
+environment:
+  - CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1
+```
+
+Проверить свои права: `SHOW GRANTS FOR default`.
 
 ```sql
 -- Создать пользователя
@@ -328,7 +394,7 @@ SHOW GRANTS FOR analyst;
 1. Добавить Grafana в `compose.yml`, запустить
 2. Подключить ClickHouse как DataSource
 3. Создать дашборд с 4 панелями: временной ряд, таблица, pie chart, stat
-4. Настроить TTL на `page_views`
+4. Создать таблицу `logs` с TTL и убедиться по `system.parts`, что старые партиции исчезают (на `page_views` TTL не вешать — снесёт данные курса)
 5. Создать readonly-пользователя для Grafana
 6. Проверить `system.query_log` — найти медленные запросы
 

@@ -94,7 +94,7 @@ docker compose up -d
 ### 2. Подключение через CLI
 
 ```bash
-docker exec -it clickhouse-local clickhouse-client --user default --password clickhouse
+docker exec -it clickhouse clickhouse-client --user default --password clickhouse
 ```
 
 ### 3. Первые запросы

@@ -11,6 +11,8 @@
 
 **Рекомендация**: вставлять батчами от 1 000 до 100 000 строк. Оптимально — раз в секунду.
 
+> **Начиная с 26.3 LTS настройка `async_insert` включена по умолчанию.** Сервер сам копит мелкие вставки в буфер и сбрасывает их одним Part (по умолчанию не дольше 200 мс — `async_insert_busy_timeout_max_ms`). Проверить: `SELECT name, value FROM system.settings WHERE name = 'async_insert'`. Правило «вставляй батчами» это не отменяет: асинхронная вставка — страховка от чужого плохого клиента, а не замена батчам. Каждый мелкий INSERT всё так же тратит round-trip, парсинг и место в очереди буфера.
+
 ## INSERT VALUES
 
 Самый простой способ — перечислить значения:
@@ -57,16 +59,31 @@ INSERT INTO tutorial.page_views FORMAT JSONEachRow
 
 ## Загрузка из файла
 
+Сначала создай файлы в текущем каталоге — колонки в том же порядке, что и в таблице:
+
+```bash
+cat > data.csv <<'EOF'
+2026-03-05,2026-03-05 09:00:00,5001,/home,7,US,desktop
+2026-03-05,2026-03-05 09:03:00,5002,/pricing,25,DE,mobile
+2026-03-05,2026-03-05 09:07:00,5003,/blog,90,FR,tablet
+EOF
+
+cat > data.jsonl <<'EOF'
+{"event_date": "2026-03-06", "event_time": "2026-03-06 08:00:00", "user_id": 6001, "page_url": "/login", "duration": 5, "country": "UK", "device": "mobile"}
+{"event_date": "2026-03-06", "event_time": "2026-03-06 08:02:00", "user_id": 6002, "page_url": "/signup", "duration": 40, "country": "CA", "device": "desktop"}
+EOF
+```
+
 ### Через clickhouse-client
 
 ```bash
 # CSV-файл
-docker exec -i clickhouse-local clickhouse-client \
+docker exec -i clickhouse clickhouse-client \
     --user default --password clickhouse \
     --query="INSERT INTO tutorial.page_views FORMAT CSV" < data.csv
 
 # JSON
-docker exec -i clickhouse-local clickhouse-client \
+docker exec -i clickhouse clickhouse-client \
     --user default --password clickhouse \
     --query="INSERT INTO tutorial.page_views FORMAT JSONEachRow" < data.jsonl
 ```
@@ -88,25 +105,48 @@ curl 'http://localhost:8123/?user=default&password=clickhouse&query=INSERT+INTO+
 ClickHouse имеет встроенные функции для генерации данных:
 
 ```sql
--- Генерация 1 000 000 строк (даты за последние 90 дней от текущей)
+-- Генерация 1 000 000 строк за 90 дней: 2026-01-01 .. 2026-03-31
 INSERT INTO tutorial.page_views
 SELECT
-    toDate(now()) - rand() % 90                                  AS event_date,
-    now() - rand() % (90 * 86400)                                AS event_time,
-    rand() % 10000 + 1                                          AS user_id,
+    toDate(event_time)                                            AS event_date,
+    event_time,
+    rand(2) % 10000 + 1                                           AS user_id,
     arrayElement(
         ['/home', '/products', '/checkout', '/about', '/pricing',
          '/api/docs', '/blog', '/contact', '/login', '/signup'],
-        rand() % 10 + 1
-    )                                                            AS page_url,
-    rand() % 300 + 1                                             AS duration,
+        rand(3) % 10 + 1
+    )                                                             AS page_url,
+    rand(4) % 300 + 1                                             AS duration,
     arrayElement(
         ['US', 'DE', 'FR', 'UK', 'JP', 'BR', 'CA', 'AU'],
-        rand() % 8 + 1
-    )                                                            AS country,
-    arrayElement(['desktop', 'mobile', 'tablet'], rand() % 3 + 1) AS device
-FROM numbers(1000000);
+        rand(5) % 8 + 1
+    )                                                             AS country,
+    arrayElement(['desktop', 'mobile', 'tablet'], rand(6) % 3 + 1) AS device
+FROM (
+    SELECT toDateTime('2026-01-01 00:00:00') + rand(1) % (90 * 86400) AS event_time
+    FROM numbers(1000000)
+);
 ```
+
+**Два нюанса, без которых генератор даёт мусор.**
+
+`rand()` без аргумента внутри одного запроса — это одно и то же выражение, и ClickHouse вычисляет его **один раз на строку**. Проверь сам:
+
+```sql
+SELECT count() FROM (SELECT rand() % 10 AS a, rand() % 10 AS b FROM numbers(1000)) WHERE a != b;
+-- 0: a и b всегда равны
+```
+
+Значит все колонки оказались бы функциями одного числа: `page_url` жёстко связан с датой (`10` делит `90`), и на каждую дату пришлась бы ровно одна страница и один девайс. Разные аргументы — `rand(1)`, `rand(2)`, … — дают независимые потоки:
+
+```sql
+SELECT count() FROM (SELECT rand(1) % 10 AS a, rand(2) % 10 AS b FROM numbers(1000)) WHERE a != b;
+-- около 900
+```
+
+Второй нюанс: `event_date` считается из `event_time` (`toDate(event_time)`), а не генерируется отдельно. Иначе дата и время события расходятся почти в каждой строке, и любая группировка по дате врёт.
+
+> Диапазон дат зафиксирован (`2026-01-01 .. 2026-03-31`) намеренно: следующие уроки фильтруют по конкретным датам вроде `'2026-02-15'`. Если сгенерировать данные относительно `now()`, эти примеры вернут ноль строк.
 
 ### Проверка загруженных данных
 
@@ -128,7 +168,7 @@ WHERE table = 'page_views' AND active;
 
 ## Таблица system.parts
 
-Каждый INSERT создаёт Part. Посмотреть их:
+Каждый INSERT создаёт Part (при `async_insert = 1` — каждый сброс буфера, то есть несколько мелких INSERT могут склеиться в один Part). Посмотреть их:
 
 ```sql
 SELECT
@@ -195,7 +235,7 @@ SELECT * FROM tutorial.page_views LIMIT 5 FORMAT JSONEachRow;
 
 - Всегда вставляй батчами (1000+ строк за раз)
 - `JSONEachRow` — лучший формат для интеграции с приложениями
-- Каждый INSERT создаёт Part; Parts фоново сливаются
+- Каждый INSERT создаёт Part; Parts фоново сливаются. С 26.3 LTS `async_insert = 1` по умолчанию — сервер склеивает мелкие вставки в один Part
 - `system.parts` — просмотр физических кусков таблицы
 - `numbers(N)` + `rand()` — генерация тестовых данных
 - ClickHouse поддерживает десятки форматов ввода/вывода

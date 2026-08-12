@@ -2,12 +2,14 @@ name: clickhouse
 
 services:
   clickhouse:
-    image: clickhouse/clickhouse-server:25.8.8.26
+    image: clickhouse/clickhouse-server:26.3.17.110
     container_name: clickhouse
     restart: unless-stopped
     environment:
       - CLICKHOUSE_USER=default
       - CLICKHOUSE_PASSWORD=clickhouse
+      # Разрешает CREATE USER / CREATE ROLE / GRANT из SQL (урок 10)
+      - CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1
     ports:
       - "8123:8123"   # HTTP interface
       - "9000:9000"   # Native TCP protocol

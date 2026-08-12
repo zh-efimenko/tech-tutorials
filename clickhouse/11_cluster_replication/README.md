@@ -13,33 +13,31 @@ Standalone ClickHouse подходит для разработки, но в prod
 ## Архитектура кластера
 
 ```
-                    ┌─────────────────────────────────────────┐
-                    │          tutorial_cluster                │
-                    │                                         │
-                    │   ┌───────────┐  ┌───────────┐  ┌───────────┐
-                    │   │  Node 1   │  │  Node 2   │  │  Node 3   │
-                    │   │           │  │           │  │           │
-                    │   │ Replica   │  │ Replica   │  │ Replica   │
-                    │   │ + Keeper  │  │ + Keeper  │  │ + Keeper  │
-                    │   │           │  │           │  │           │
-                    │   │ :8123 HTTP│  │ :8123 HTTP│  │ :8123 HTTP│
-                    │   │ :9000 TCP │  │ :9000 TCP │  │ :9000 TCP │
-                    │   │ :9181 Keep│  │ :9181 Keep│  │ :9181 Keep│
-                    │   └───────────┘  └───────────┘  └───────────┘
-                    │         │              │              │       │
-                    │         └──────────────┼──────────────┘       │
-                    │                        │                     │
-                    │              ┌─────────────────┐             │
-                    │              │ ClickHouse Keeper│             │
-                    │              │  (Raft consensus)│             │
-                    │              └─────────────────┘             │
-                    └─────────────────────────────────────────────┘
-                                         ▲
-                                         │ JDBC
-                                  ┌──────────────┐
-                                  │  Spring Boot  │
-                                  │  Application  │
-                                  └──────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│                      tutorial_cluster                        │
+│                                                              │
+│   ┌────────────┐    ┌────────────┐    ┌────────────┐         │
+│   │   Node 1   │    │   Node 2   │    │   Node 3   │         │
+│   │  Replica   │    │  Replica   │    │  Replica   │         │
+│   │  + Keeper  │    │  + Keeper  │    │  + Keeper  │         │
+│   │ :8123 HTTP │    │ :8123 HTTP │    │ :8123 HTTP │         │
+│   │ :9000 TCP  │    │ :9000 TCP  │    │ :9000 TCP  │         │
+│   │ :9181 Keep │    │ :9181 Keep │    │ :9181 Keep │         │
+│   └─────┬──────┘    └─────┬──────┘    └─────┬──────┘         │
+│         │                 │                 │                │
+│         └─────────────────┼─────────────────┘                │
+│                           │                                  │
+│              ┌────────────┴─────────────┐                    │
+│              │  Raft-кворум трёх Keeper │                    │
+│              │  (отдельного сервиса нет)│                    │
+│              └──────────────────────────┘                    │
+└──────────────────────────────────────────────────────────────┘
+                            ▲
+                            │ JDBC
+                   ┌────────┴────────┐
+                   │   Spring Boot   │
+                   │   Application   │
+                   └─────────────────┘
 ```
 
 ### Ключевые понятия
@@ -73,9 +71,16 @@ Standalone ClickHouse подходит для разработки, но в prod
 
 ## Конфигурация кластера (XML)
 
-### remote_servers — определение кластера
+Конфигурация раскладывается по двум файлам, оба лежат рядом с `compose.yml` в каталоге `etc/docker/clickhouse/`:
 
-Файл `clickhouse-cluster.xml` описывает топологию:
+| Файл | Что описывает |
+|---|---|
+| `clickhouse-cluster.xml` | топология (`remote_servers`), адреса Keeper (`zookeeper`), макросы (`macros`) |
+| `clickhouse-keeper.xml` | сам Keeper (`keeper_server`) |
+
+Ниже секции разбираются по одной. **У XML-файла один корневой элемент `<clickhouse>`** — все секции одного файла складываются внутрь него, а не идут друг за другом отдельными корнями. Полный вид `clickhouse-cluster.xml` — в конце раздела.
+
+### remote_servers — определение кластера
 
 ```xml
 <clickhouse>
@@ -105,7 +110,7 @@ Standalone ClickHouse подходит для разработки, но в prod
 - Все реплики внутри одного `<shard>` хранят одинаковые данные
 - Порт `9000` — native TCP, не путать с `8123` (HTTP)
 
-### ClickHouse Keeper — координация
+### ClickHouse Keeper — координация (файл `clickhouse-keeper.xml`)
 
 Keeper встроен в ClickHouse и заменяет внешний ZooKeeper. Он обеспечивает:
 - Лидер-выборы при репликации
@@ -151,10 +156,9 @@ Keeper встроен в ClickHouse и заменяет внешний ZooKeeper
 
 ### Подключение к Keeper (zookeeper-секция)
 
-В том же `clickhouse-cluster.xml` указывается, куда подключаться за координацией:
+Ещё две секции того же `clickhouse-cluster.xml` — куда ходить за координацией и какие макросы подставлять:
 
 ```xml
-<clickhouse>
     <zookeeper>
         <node>
             <host>clickhouse-node-1</host>
@@ -168,6 +172,24 @@ Keeper встроен в ClickHouse и заменяет внешний ZooKeeper
             <host>clickhouse-node-3</host>
             <port>9181</port>
         </node>
+    </zookeeper>
+
+    <macros>
+        <shard>01</shard>
+        <replica from_env="CLICKHOUSE_REPLICA_NAME"/>
+    </macros>
+```
+
+Собранный `clickhouse-cluster.xml` целиком выглядит так:
+
+```xml
+<clickhouse>
+    <remote_servers>
+        <!-- ... как выше ... -->
+    </remote_servers>
+
+    <zookeeper>
+        <!-- ... как выше ... -->
     </zookeeper>
 
     <macros>
@@ -188,7 +210,8 @@ Keeper встроен в ClickHouse и заменяет внешний ZooKeeper
 ```yaml
 services:
   clickhouse-node-1:
-    image: clickhouse/clickhouse-server:25.8.8.26
+    image: clickhouse/clickhouse-server:26.3.17.110
+    container_name: clickhouse-node-1   # иначе docker exec по этому имени не найдёт контейнер
     hostname: clickhouse-node-1
     environment:
       CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
@@ -209,7 +232,8 @@ services:
       retries: 10
 
   clickhouse-node-2:
-    image: clickhouse/clickhouse-server:25.8.8.26
+    image: clickhouse/clickhouse-server:26.3.17.110
+    container_name: clickhouse-node-2   # иначе docker exec по этому имени не найдёт контейнер
     hostname: clickhouse-node-2
     environment:
       CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
@@ -232,7 +256,8 @@ services:
       org.springframework.boot.ignore: true  # Spring Boot DevTools не управляет этим контейнером
 
   clickhouse-node-3:
-    image: clickhouse/clickhouse-server:25.8.8.26
+    image: clickhouse/clickhouse-server:26.3.17.110
+    container_name: clickhouse-node-3   # иначе docker exec по этому имени не найдёт контейнер
     hostname: clickhouse-node-3
     environment:
       CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
@@ -259,6 +284,7 @@ services:
 - Все ноды используют одни и те же XML-конфигурации, но различаются через env (`KEEPER_SERVER_ID`, `CLICKHOUSE_REPLICA_NAME`)
 - Лейбл `org.springframework.boot.ignore: true` на 2-й и 3-й нодах предотвращает их управление через Spring Boot Docker Compose Support — приложение подключается только к первой ноде
 - HTTP-порты маппятся на разные хостовые порты: `8123`, `8124`, `8125`
+- Volume для `/var/lib/clickhouse` намеренно не задан: стенд учебный, `docker compose down` стирает и данные, и Raft-лог Keeper. Для практики 5 (гашение ноды) это неважно — там `docker compose stop`/`start`, а не `down`
 
 ## Реплицированные таблицы
 
@@ -321,14 +347,31 @@ CREATE TABLE tutorial.page_views ON CLUSTER tutorial_cluster
 
 ### Пути реплик в Keeper
 
-`ReplicatedReplacingMergeTree` автоматически использует макросы `{shard}` и `{replica}` для формирования уникальных путей в Keeper:
+`ReplicatedReplacingMergeTree` без аргументов пути берёт их из серверных настроек `default_replica_path` и `default_replica_name`:
+
+```sql
+SELECT name, value FROM system.server_settings WHERE name LIKE 'default_replica%';
+-- default_replica_path   /clickhouse/tables/{uuid}/{shard}
+-- default_replica_name   {replica}
+```
+
+То есть фактический путь строится по UUID таблицы, а не по её имени:
 
 ```
-/clickhouse/tables/{shard}/tutorial.page_views          -- путь к метаданным таблицы
-/clickhouse/tables/{shard}/tutorial.page_views/{replica} -- путь к конкретной реплике
+/clickhouse/tables/991bee28-0a3b-436d-b231-30d29853e236/01           -- метаданные таблицы
+/clickhouse/tables/991bee28-0a3b-436d-b231-30d29853e236/01/replicas/clickhouse-node-1
 ```
 
-Благодаря `<macros>` в конфигурации, каждая нода подставляет свои значения, и конфликтов не возникает.
+`{uuid}` одинаков на всех нодах — его разносит `ON CLUSTER`, поэтому реплики находят друг друга. Макрос `{replica}` из `<macros>` даёт уникальное имя реплики внутри пути.
+
+Путь можно задать и явно — тогда в Keeper он читаемый, а имя таблицы видно глазами:
+
+```sql
+ENGINE = ReplicatedReplacingMergeTree(
+    '/clickhouse/tables/{shard}/tutorial/page_views', '{replica}', updated_at)
+```
+
+Именно так делает адаптер Flyway для своей `flyway_schema_history`. Выбирай что-то одно и держись этого: путь — часть идентичности таблицы в Keeper, изменить его на живой таблице нельзя.
 
 ### Другие таблицы кластера
 
@@ -417,6 +460,11 @@ CREATE TABLE tutorial.page_views ON CLUSTER ${clickhouse_cluster_name}
 Spring Boot не поддерживает `flyway.clickhouse.clusterName` напрямую. Нужен кастомный бин:
 
 ```java
+// В Spring Boot 4 автоконфигурация Flyway переехала в отдельный модуль,
+// вместе с ней — и этот интерфейс. Привычный по Boot 3
+// org.springframework.boot.autoconfigure.flyway.* больше не существует.
+import org.springframework.boot.flyway.autoconfigure.FlywayConfigurationCustomizer;
+
 @Configuration
 public class FlywayConfig {
 
@@ -447,10 +495,13 @@ V20260401_3__countries_table.sql
 
 ## Настройка Gradle (build.gradle)
 
+Полный скелет `build.gradle` (блоки `plugins`, `repositories`, `test`) — в уроке 8; ниже только то, что относится к кластеру.
+
 ### Buildscript — зависимость для плагина Flyway
 
 ```groovy
 buildscript {
+    repositories { mavenCentral() }
     dependencies {
         // Flyway-плагин не содержит ClickHouse-драйвер —
         // нужно добавить его в classpath самого плагина
@@ -459,7 +510,7 @@ buildscript {
 }
 ```
 
-**Почему `buildscript`?** Gradle-плагин `flyway` запускается в compile-time, а не в runtime приложения. Ему нужен свой собственный classpath с ClickHouse-драйвером.
+**Почему `buildscript`?** Gradle-плагин `flyway` запускается в compile-time, а не в runtime приложения. Ему нужен свой собственный classpath с ClickHouse-адаптером.
 
 ### Dependencies — зависимости приложения
 
@@ -469,16 +520,16 @@ dependencies {
     implementation "org.springframework.boot:spring-boot-starter-jdbc"
 
     // ClickHouse JDBC Driver
-    implementation("com.clickhouse:clickhouse-jdbc:$clickhouse_jdbc_version") {
-        // lz4 конфликтует с версией внутри spring-kafka —
-        // исключаем, чтобы использовать версию из Kafka
-        exclude group: "at.yawk.lz4", module: "lz4-java"
-    }
+    implementation "com.clickhouse:clickhouse-jdbc:$clickhouse_jdbc_version"
 
-    // Flyway Core (миграции при старте приложения)
-    implementation "org.flywaydb:flyway-core"
+    // Flyway: стартер тянет flyway-core + автоконфигурацию (Spring Boot 4)
+    implementation "org.springframework.boot:spring-boot-starter-flyway"
     // ClickHouse-адаптер для Flyway (только runtime — не нужен при компиляции)
     runtimeOnly "org.flywaydb:flyway-database-clickhouse:$flyway_database_clickhouse_version"
+
+    // Нужен, чтобы работали ключи spring.docker.compose.* из application-local.yml.
+    // Без этой зависимости они молча игнорируются, и кластер не поднимается.
+    developmentOnly "org.springframework.boot:spring-boot-docker-compose"
 }
 ```
 
@@ -489,7 +540,18 @@ flyway_database_clickhouse_version=10.24.0
 clickhouse_jdbc_version=0.9.8
 ```
 
-**Нюанс с lz4:** библиотека `lz4-java` поставляется и с ClickHouse JDBC, и со Spring Kafka. Разные версии конфликтуют — исключаем из ClickHouse-драйвера, чтобы использовать совместимую версию из Kafka.
+Версия адаптера `10.24.0` — последняя выпущенная: community-модуль давно не обновляется, но с Flyway 12/13 из BOM Spring Boot 4 работает (подробнее — в уроке 8).
+
+**Нюанс с lz4.** `lz4-java` приходит и с ClickHouse JDBC, и с Kafka. На стеке этого курса конфликта нет: обе зависимости — это одни и те же координаты `at.yawk.lz4:lz4-java` (драйвер 0.9.8 тянет 1.10.4, `kafka-clients` 4.2.1 — 1.10.1), и Gradle сам сводит их к одной версии 1.10.4.
+
+**Не исключай lz4 «на всякий случай».** Совет `exclude group: "at.yawk.lz4", module: "lz4-java"` кочует по интернету со времён, когда у Kafka и ClickHouse были разные координаты. Сейчас он просто выкидывает библиотеку из classpath, и `gradle flywayMigrate` падает ещё до подключения к базе:
+
+```
+> net/jpountz/lz4/LZ4Factory
+Caused by: java.lang.NoClassDefFoundError: net/jpountz/lz4/LZ4Factory
+```
+
+Проверить, что в проекте одна версия и один артефакт: `./gradlew dependencies --configuration runtimeClasspath | grep lz4`.
 
 ## Конфигурация Spring Boot DataSource
 
@@ -524,6 +586,8 @@ spring:
 - В production балансировка между нодами делается через LoadBalancer или DNS
 - В dev — подключаемся к первой ноде (`localhost:8123`)
 - `lifecycle-management: start_only` — Spring Boot запускает Docker Compose, но не останавливает при shutdown
+
+> Когда Docker Compose-интеграция включена, она **перебивает** `spring.datasource.url` своими `ConnectionDetails`: адрес берётся у найденного контейнера, а имя базы — из его переменной `CLICKHOUSE_DB`. Здесь это работает потому, что в compose кластера `CLICKHOUSE_DB: tutorial` задан на каждой ноде. В уроке 8 такой переменной нет, и там интеграцию приходится держать выключенной.
 
 ### JDBC URL параметры
 
@@ -577,7 +641,9 @@ SELECT * FROM system.zookeeper WHERE path = '/clickhouse';
 | `active_replicas` | = `total_replicas` | Есть недоступные реплики |
 | `queue_size` | 0 | Накапливается очередь операций |
 | `absolute_delay` | 0 | Реплика отстаёт от лидера |
-| `is_leader` | Ровно 1 на таблицу | Нет лидера = нет записи |
+| `is_leader` | `1` на каждой активной реплике | `0` везде — реплики не видят Keeper |
+
+> `is_leader = 1` сразу на всех трёх нодах — это норма, а не сбой. С версии 20.6 ClickHouse работает в режиме multi-leader: назначать merge может любая реплика, единственного лидера больше нет. Старое правило «ровно один лидер» встречается в статьях тех лет и даёт ложную тревогу.
 
 ## Типичные ошибки и решения
 
@@ -595,20 +661,33 @@ SELECT * FROM system.zookeeper WHERE path = '/clickhouse';
 
 ### 3. «Replica already exists» при создании таблицы
 
-**Причина:** макрос `{replica}` возвращает одинаковое значение на разных нодах.
-
-**Решение:** убедиться, что `CLICKHOUSE_REPLICA_NAME` уникален для каждой ноды в Docker Compose.
-
-### 4. Конфликт версий lz4
-
-**Причина:** `clickhouse-jdbc` и `spring-kafka` тянут разные версии lz4.
-
-**Решение:** исключить lz4 из ClickHouse-зависимости:
-```groovy
-implementation("com.clickhouse:clickhouse-jdbc:$clickhouse_jdbc_version") {
-    exclude group: "at.yawk.lz4", module: "lz4-java"
-}
 ```
+Code: 253. DB::Exception: Replica /clickhouse/tables/01/tutorial/flyway_schema_history/replicas/clickhouse-node-1
+already exists. (REPLICA_ALREADY_EXISTS)
+```
+
+**Причина 1 (редкая):** макрос `{replica}` возвращает одинаковое значение на разных нодах — проверь, что `CLICKHOUSE_REPLICA_NAME` уникален в compose.
+
+**Причина 2 (та, на которую напорешься реально):** таблицу удалили без `SYNC`. База `tutorial` — движка Atomic, `DROP TABLE` в ней асинхронный: сама таблица исчезает сразу, а znode реплики висит в Keeper ещё `database_atomic_delay_before_drop_table_sec` (по умолчанию 480 секунд). Пересоздание таблицы с тем же **явным** путём — а это ровно `flyway_schema_history` — упирается в оставшуюся запись.
+
+**Решение:** удалять реплицированные таблицы с `SYNC`:
+
+```sql
+DROP TABLE tutorial.page_views ON CLUSTER tutorial_cluster SYNC;
+```
+
+Если уже наступил — вычисти запись вручную, на **каждой** ноде:
+
+```sql
+SYSTEM DROP REPLICA 'clickhouse-node-1'
+    FROM ZKPATH '/clickhouse/tables/01/tutorial/flyway_schema_history';
+```
+
+### 4. `NoClassDefFoundError: net/jpountz/lz4/LZ4Factory` на `flywayMigrate`
+
+**Причина:** из `clickhouse-jdbc` исключили `at.yawk.lz4:lz4-java` — драйверу нечем распаковывать ответ сервера.
+
+**Решение:** убрать `exclude`. И ClickHouse, и Kafka используют один артефакт `at.yawk.lz4:lz4-java`, Gradle сводит его к одной версии сам.
 
 ### 5. Данные видны на одной ноде, но не на другой
 
@@ -643,7 +722,11 @@ implementation("com.clickhouse:clickhouse-jdbc:$clickhouse_jdbc_version") {
    ```
 4. Вставить данные на ноде 1, проверить появление на нодах 2 и 3
 5. Остановить ноду 2, вставить данные, поднять ноду 2 — убедиться, что данные подтянулись
-6. Написать Flyway-миграцию с placeholder `${clickhouse_cluster_name}` и запустить через `gradle flywayMigrate`
+6. Удалить созданную вручную таблицу — `DROP TABLE tutorial.page_views ON CLUSTER tutorial_cluster SYNC` — и создать её заново миграцией: написать Flyway-миграцию с placeholder `${clickhouse_cluster_name}` и запустить `gradle flywayMigrate`
+
+   > Если оставить таблицу из шага 3, `flywayMigrate` упрётся в непустую схему:
+   > `Found non-empty schema(s) "tutorial" but no schema history table. Use baseline() or set baselineOnMigrate to true`.
+   > Второй вариант — оставить таблицу и добавить `flyway.baselineOnMigrate=true` в `gradle.properties`, но тогда миграция `page_views` будет помечена как уже применённая и не проверится.
 7. Настроить Spring Boot приложение с `FlywayConfig` и `application.yml` для кластера
 
 ## Итоги урока
@@ -654,6 +737,6 @@ implementation("com.clickhouse:clickhouse-jdbc:$clickhouse_jdbc_version") {
 - Flyway в кластере: `flyway.clickhouse.clusterName` реплицирует `flyway_schema_history`
 - Placeholders (`${clickhouse_cluster_name}`) — единственный правильный способ передать имя кластера в миграции
 - `FlywayConfigurationCustomizer` — обязательный бин для программной настройки clusterName в Spring Boot
-- Gradle: ClickHouse-драйвер нужен и в `buildscript` (для плагина Flyway), и в `dependencies` (для приложения)
-- Исключение `lz4-java` из `clickhouse-jdbc` — стандартная практика при совместном использовании с Kafka
+- Gradle: адаптер `flyway-database-clickhouse` нужен и в `buildscript` (для плагина Flyway), и в `runtimeOnly` (для приложения)
+- `lz4-java` из `clickhouse-jdbc` исключать не нужно: у Kafka те же координаты `at.yawk.lz4:lz4-java`, а без него драйвер падает с `NoClassDefFoundError`
 - Приложение подключается к одной ноде, балансировка — на уровне инфраструктуры

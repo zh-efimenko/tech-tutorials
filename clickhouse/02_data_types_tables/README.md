@@ -44,7 +44,7 @@ ClickHouse — строго типизированная СУБД. Правил�
 
 ```sql
 -- LowCardinality — хранит словарь + индексы вместо полных строк
-CREATE TABLE events (
+CREATE TABLE tutorial.events (
     event_type LowCardinality(String)  -- 'click', 'view', 'purchase' — всего ~20 вариантов
 ) ENGINE = MergeTree() ORDER BY tuple();
 ```
@@ -156,9 +156,9 @@ ORDER BY (user_id, event_time)  -- правильно
 ORDER BY (country, event_date)  -- правильно для другого сценария
 ```
 
-#### `TTL event_date + INTERVAL 90 DAY`
+#### `TTL` — необязательный параметр
 
-Автоматическое удаление данных старше 90 дней. ClickHouse удаляет целые Parts при merge.
+В нашем `CREATE TABLE` его нет намеренно: данные курса нужны целиком. Синтаксис выглядит так — `TTL event_date + INTERVAL 90 DAY` удаляет данные старше 90 дней, целыми Parts при merge. Подробно — в уроке 10.
 
 #### `SETTINGS index_granularity = 8192`
 
@@ -210,9 +210,11 @@ SHOW CREATE TABLE tutorial.page_views;
 
 -- 5. Создать таблицу orders (см. выше)
 
--- 6. Удалить таблицу (если нужно пересоздать)
+-- 6. Если структура получилась неудачной — удалить и создать заново (шаг 2)
 DROP TABLE IF EXISTS tutorial.page_views;
 ```
+
+> `page_views` нужна во всех следующих уроках. Если выполнил шаг 6 — обязательно создай таблицу заново.
 
 ## Итоги урока
 

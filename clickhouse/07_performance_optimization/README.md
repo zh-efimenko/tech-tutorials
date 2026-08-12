@@ -78,6 +78,8 @@ ORDER BY partition;
 
 ### Управление партициями
 
+> **Не выполняй `DROP PARTITION` на `page_views`.** Это треть данных курса (~345 000 строк) и обратного хода нет: следующий же пример этого урока перестанет упираться в `max_rows_to_read`, а примеры уроков 9 и 10 потеряют январь. Синтаксис ниже — для чтения; если хочешь попробовать руками, сделай это на копии: `CREATE TABLE tutorial.pv_copy AS tutorial.page_views` + `INSERT INTO tutorial.pv_copy SELECT * FROM tutorial.page_views`.
+
 ```sql
 -- Удалить данные за январь (мгновенно — удаляется файл)
 ALTER TABLE tutorial.page_views DROP PARTITION '202601';
@@ -117,10 +119,12 @@ SET send_logs_level = 'trace';
 -- Выполнить запрос и посмотреть, сколько гранул прочитано
 SELECT count() FROM tutorial.page_views WHERE country = 'US';
 
--- В логе будет:
--- Selected 15/120 parts, 1500/12000 marks (гранул) — хорошо
--- Selected 120/120 parts, 12000/12000 marks — плохо, читает всё
+-- В логе будет строка вида:
+-- Selected 4/4 parts by partition key, 4 parts by primary key,
+-- 125/125 marks by primary key, 125 marks to read from 4 ranges
 ```
+
+Читать её так: первая дробь — сколько партов прошло отсечение по партициям, вторая (`marks by primary key`) — сколько гранул осталось после sparse index. `125/125` означает, что индекс не отсёк ничего: `country` не входит в `ORDER BY (user_id, event_time)`, поэтому читается вся таблица. Для сравнения выполни запрос с фильтром по первой колонке ключа — `WHERE user_id = 42` — там дробь будет вида `3/125`.
 
 ## Data Skipping Indexes
 
@@ -138,6 +142,18 @@ ALTER TABLE tutorial.page_views MATERIALIZE INDEX idx_duration;
 
 Запрос `WHERE duration > 200` пропустит гранулы, где max(duration) < 200.
 
+**Проверь эффект — и не удивляйся нулю:**
+
+```sql
+SET send_logs_level = 'trace';
+SELECT count() FROM tutorial.page_views WHERE duration > 200;
+-- Index `idx_duration` has dropped 0/125 granules
+```
+
+Ноль — правильный результат на данных этого курса, а не поломка. `duration` сгенерирован равномерно в диапазоне 1..300 и никак не связан с `ORDER BY (user_id, event_time)`, поэтому почти в каждой грануле по 8192 строк найдётся значение и меньше 200, и больше. `minmax` отсекает гранулу, только если весь её диапазон лежит вне условия.
+
+**Отсюда правило:** skip-индекс работает, когда значения колонки коррелируют с физическим порядком строк — растущие счётчики, идентификаторы, редкие категории. На равномерно случайной колонке он бесполезен и только занимает место.
+
 ### set — набор уникальных значений в грануле
 
 ```sql
@@ -147,7 +163,7 @@ ALTER TABLE tutorial.page_views
 ALTER TABLE tutorial.page_views MATERIALIZE INDEX idx_page_url;
 ```
 
-Запрос `WHERE page_url = '/checkout'` пропустит гранулы, где нет такого page_url.
+Запрос `WHERE page_url = '/checkout'` пропустит гранулы, где нет такого page_url. На данных курса это снова `0/125`: в наборе всего 10 URL, и в грануле из 8192 строк встречаются все. `set(100)` начинает окупаться, когда уникальных значений в колонке много, а в отдельной грануле — единицы.
 
 ### bloom_filter — вероятностный фильтр
 
@@ -192,6 +208,17 @@ GROUP BY country;
 -- В плане будет: ReadFromMergeTree (proj_by_country)
 ```
 
+Чтобы сравнить с исходным вариантом, проекцию надо отключить настройкой — иначе ClickHouse всегда возьмёт её:
+
+```sql
+EXPLAIN
+SELECT country, count()
+FROM tutorial.page_views
+GROUP BY country
+SETTINGS optimize_use_projections = 0;
+-- ReadFromMergeTree (tutorial.page_views)
+```
+
 ## Настройки запросов
 
 ```sql
@@ -204,9 +231,21 @@ SET max_memory_usage = 10000000000;  -- 10 GB
 -- Таймаут запроса
 SET max_execution_time = 30;  -- 30 секунд
 
--- Приблизительный результат (быстрее, но не точный)
+-- Жёсткий лимит на прочитанные строки: запрос не «упростится», а упадёт
 SET max_rows_to_read = 1000000;
+
+SELECT count() FROM tutorial.page_views WHERE duration > 5;
+-- Code: 158. DB::Exception: Limit for rows or bytes to read exceeded,
+-- max rows: 1.00 million, current rows: 1.00 million:
+-- While executing MergeTreeSelect(pool: ReadPool, algorithm: Thread). (TOO_MANY_ROWS)
+
+-- Чтобы вместо ошибки получить неполный (приблизительный) результат:
+SET read_overflow_mode = 'break';
 ```
+
+Обрати внимание: `WHERE` в запросе обязателен. `SELECT count()` без него берёт число строк из метаданных и в лимит не упирается вообще. Формулировка зависит от того, где сработала проверка. Если лимит ловится ещё на этапе планирования (например, до того как ты создал проекцию в предыдущем разделе), текст будет другим: `Limit for rows (controlled by 'max_rows_to_read' setting) exceeded, max rows: 1.00 million, current rows: 1.00 million.` Код `158` и `TOO_MANY_ROWS` одинаковы в обоих случаях — ориентируйся на них, а не на формулировку.
+
+`max_rows_to_read` — предохранитель от случайного full scan, а не режим приблизительных вычислений. Лимит проверяется по мере чтения гранул, поэтому `current rows` в сообщении — это счётчик на момент срабатывания, он может совпасть с лимитом или чуть его превысить.
 
 ## Мониторинг запросов
 
@@ -238,6 +277,8 @@ ORDER BY query_duration_ms DESC
 LIMIT 10;
 ```
 
+> На данных курса (1 млн строк) этот запрос вернёт пусто: секунду здесь не превышает ничего, самый долгий запрос — около 200 мс. Порог `1000` — production-значение; чтобы увидеть свои «тяжёлые» запросы сейчас, опусти его до `100`.
+
 ## Чек-лист оптимизации
 
 1. **WHERE по партиции** — всегда фильтруй по дате
@@ -253,9 +294,11 @@ LIMIT 10;
 
 ```sql
 -- 1. EXPLAIN ESTIMATE — оценить стоимость запроса
--- 2. Добавить minmax-индекс на duration, проверить эффективность
+-- 2. Добавить minmax-индекс на duration и убедиться по trace-логу,
+--    что он даёт 0/125 — объяснить себе почему
 -- 3. Создать проекцию для группировки по стране
 -- 4. Сравнить время запроса с проекцией и без
+--    (без — через SETTINGS optimize_use_projections = 0)
 -- 5. Посмотреть query_log — найти самые тяжёлые запросы
 -- 6. Проверить партиции и их размеры
 ```

@@ -2,12 +2,12 @@
 
 ## Цель
 
-Освоить ClickHouse на уровне, достаточном для внедрения в проект: проектирование схемы данных для аналитики, написание эффективных запросов, интеграция со Spring Boot 3 + Java 25 + Gradle.
+Освоить ClickHouse на уровне, достаточном для внедрения в проект: проектирование схемы данных для аналитики, написание эффективных запросов, интеграция со Spring Boot 4 + Java 25 + Gradle.
 
 ## Требования
 
-- Docker Desktop (compose.yml в корне проекта)
-- Java 25, Spring Boot 3.x, Gradle (wrapper)
+- Docker Desktop (compose.yml в корне проекта, образ `clickhouse/clickhouse-server:26.3.17.110` — LTS-линейка)
+- Java 25, Spring Boot 4.1.x, Gradle 9.x (wrapper)
 - Базовые знания SQL
 
 ## Запуск окружения
@@ -16,7 +16,7 @@
 docker compose up -d
 # HTTP-интерфейс: http://localhost:8123
 # Подключение через CLI:
-docker exec -it clickhouse-local clickhouse-client --user default --password clickhouse
+docker exec -it clickhouse clickhouse-client --user default --password clickhouse
 ```
 
 ---

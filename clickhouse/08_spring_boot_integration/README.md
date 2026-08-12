@@ -3,9 +3,9 @@
 ## Стек
 
 - Java 25
-- Spring Boot 3.x (последняя версия)
-- Gradle (Groovy DSL)
-- ClickHouse JDBC Driver
+- Spring Boot 4.1.0
+- Gradle 9.x (Groovy DSL)
+- ClickHouse JDBC Driver 0.9.8
 - Flyway (миграции)
 
 ## Настройка Gradle (build.gradle)
@@ -19,21 +19,53 @@ clickhouse_jdbc_version=0.9.8
 flyway_database_clickhouse_version=10.24.0
 ```
 
+> **Про версию адаптера.** `flyway-database-clickhouse` — community-модуль, его выпуск остановился на `10.24.0`, хотя сам Flyway уже 13.x. Это не опечатка: модуль работает и с Flyway 12/13 — их плагинный SPI не изменился. Держать адаптер и ядро Flyway в одной версии не нужно и не получится.
+
 ### Buildscript — classpath для Flyway-плагина
 
 Gradle-плагин Flyway запускается в compile-time, а не в runtime приложения. Ему нужен собственный classpath с ClickHouse-адаптером:
 
 ```groovy
 buildscript {
+    // Явно, чтобы classpath плагина не зависел от того, какие репозитории
+    // подтянет блок plugins {} (он добавляет plugins.gradle.org/m2 сам)
+    repositories { mavenCentral() }
     dependencies {
         classpath "org.flywaydb:flyway-database-clickhouse:$flyway_database_clickhouse_version"
     }
 }
 
 plugins {
-    id 'org.springframework.boot' version '3.x.x'
-    id 'org.flywaydb.flyway' version '10.24.0'
+    id 'java'
+    id 'org.springframework.boot' version '4.1.0'
+    id 'io.spring.dependency-management' version '1.1.7'
+    id 'org.flywaydb.flyway' version '13.2.0'
 }
+
+// А вот этот блок обязателен: без него ни одна зависимость приложения
+// не резолвится — в дереве `gradle dependencies` всё помечено FAILED
+repositories { mavenCentral() }
+
+java {
+    toolchain { languageVersion = JavaLanguageVersion.of(25) }
+}
+
+// Gradle 9 с плагином java по умолчанию ждёт JUnit 4.
+// Без этой строки тесты на JUnit 5 просто не находятся:
+// "There are test sources present ... but the test task did not discover any tests to execute"
+test { useJUnitPlatform() }
+```
+
+Рядом с `build.gradle` нужен `settings.gradle` — без него Gradle 9 не считает каталог проектом:
+
+```groovy
+rootProject.name = 'clickhouse-analytics'
+```
+
+Обёртку (`gradlew`) урок не содержит — сгенерируй её сам, после того как оба файла на месте:
+
+```bash
+gradle wrapper --gradle-version 9.5
 ```
 
 ### Dependencies — зависимости приложения
@@ -42,24 +74,38 @@ plugins {
 dependencies {
     // Spring Boot JDBC (JdbcTemplate, DataSource auto-configuration)
     implementation "org.springframework.boot:spring-boot-starter-jdbc"
-    implementation "org.springframework.boot:spring-boot-starter-web"
+    implementation "org.springframework.boot:spring-boot-starter-webmvc"
 
     // ClickHouse JDBC Driver
     implementation "com.clickhouse:clickhouse-jdbc:$clickhouse_jdbc_version"
 
-    // Flyway Core (миграции при старте приложения)
-    implementation "org.flywaydb:flyway-core"
+    // Flyway: стартер тянет flyway-core + автоконфигурацию
+    implementation "org.springframework.boot:spring-boot-starter-flyway"
     // ClickHouse-адаптер для Flyway (только runtime — не нужен при компиляции)
     runtimeOnly "org.flywaydb:flyway-database-clickhouse:$flyway_database_clickhouse_version"
 
-    // DevTools — автоматический запуск Docker Compose
+    // Автоматический запуск Docker Compose при старте приложения.
+    // Включается самим фактом присутствия в classpath, поэтому в конфиге
+    // ниже мы его явно выключаем — почему, разобрано в разделе про application.yml
     developmentOnly "org.springframework.boot:spring-boot-docker-compose"
 
     // Testcontainers
-    testImplementation "org.testcontainers:clickhouse"
-    testImplementation "org.testcontainers:junit-jupiter"
+    testImplementation "org.springframework.boot:spring-boot-starter-test"
+    testImplementation "org.testcontainers:testcontainers-clickhouse"
+    testImplementation "org.testcontainers:testcontainers-junit-jupiter"
 }
 ```
+
+**Что изменилось в Spring Boot 4:**
+
+| Было (3.x) | Стало (4.1) |
+|---|---|
+| `spring-boot-starter-web` | `spring-boot-starter-webmvc` (старое имя работает, но deprecated) |
+| `org.flywaydb:flyway-core` | `spring-boot-starter-flyway` — автоконфигурация Flyway живёт в отдельном модуле, одного `flyway-core` в classpath уже недостаточно |
+| `org.testcontainers:clickhouse` | `org.testcontainers:testcontainers-clickhouse` (Testcontainers 2.x переименовал координаты) |
+| `org.testcontainers:junit-jupiter` | `org.testcontainers:testcontainers-junit-jupiter` |
+
+> Если оставить `flyway-core` вместо стартера, приложение стартует **без единой ошибки**, а миграции просто не выполнятся — первое падение будет уже на запросе к несуществующей таблице.
 
 **Почему два места для `flyway-database-clickhouse`?**
 
@@ -68,7 +114,26 @@ dependencies {
 | `buildscript { classpath }` | Для Gradle-плагина `flywayMigrate` (запуск из CLI: `gradle flywayMigrate`) |
 | `runtimeOnly` | Для автоматических миграций при старте Spring Boot приложения |
 
-> Если Kafka используется в том же проекте, нужно исключить `lz4-java` из ClickHouse-драйвера — подробнее в уроке 11.
+> Про `lz4-java`, который тянут и ClickHouse-драйвер, и Kafka: исключать его не нужно — почему, разобрано в уроке 11.
+
+### Точка входа
+
+Без класса с `main` `bootJar`/`bootRun` падает: `Main class name has not been configured and it could not be resolved from classpath`. Все классы ниже кладём в подпакеты этого пакета — иначе component scan их не увидит:
+
+```java
+package com.example.analytics;
+
+@SpringBootApplication
+@EnableScheduling  // нужен для @Scheduled-флаша буфера, см. ниже
+public class AnalyticsApplication {
+
+    public static void main(String[] args) {
+        SpringApplication.run(AnalyticsApplication.class, args);
+    }
+}
+```
+
+Дальше в примерах `package` и `import` опущены — подставляй свои.
 
 ## Конфигурация (application.yml)
 
@@ -86,7 +151,28 @@ spring:
   flyway:
     out-of-order: true
     validate-migration-naming: true
+    baseline-on-migrate: true
+  docker:
+    compose:
+      enabled: false   # см. пояснение ниже
 ```
+
+**Про `spring.docker.compose.enabled: false`.** Модуль `spring-boot-docker-compose` включается сам, как только оказывается в classpath, и ищет `compose.yml` **в рабочем каталоге приложения**. У нас его там нет — compose курса лежит в корне курса, а не в каталоге Gradle-проекта. Без этой строки приложение не стартует вообще:
+
+```
+java.lang.IllegalStateException: No Docker Compose file found in directory '<project>/.'
+```
+
+Подсунуть ему чужой файл через `spring.docker.compose.file` — не решение, и почему именно, разобрано ниже, в конфиге профиля `local`.
+
+`baseline-on-migrate: true` нужен, потому что база `tutorial` уже не пустая — в ней таблицы из уроков 2–7. Без этой настройки первый же запуск падает:
+
+```
+FlywayException: Found non-empty schema(s) "tutorial" but no schema history table.
+Use baseline() or set baselineOnMigrate to true to initialize the schema history table.
+```
+
+Flyway создаст `flyway_schema_history`, пометит текущее состояние как baseline и применит миграции поверх.
 
 ### Локальный конфиг — application-local.yml
 
@@ -99,11 +185,17 @@ spring:
     url: jdbc:clickhouse://localhost:8123/tutorial
     username: default
     password: clickhouse
-  docker:
-    compose:
-      enabled: true
-      lifecycle-management: start_only  # запускает, но не останавливает при shutdown
 ```
+
+Docker Compose-интеграция и здесь остаётся выключённой (`enabled: false` наследуется из `application.yml`) — окружение курса ты поднимаешь сам командой `docker compose up -d`.
+
+**Почему её не включаем.** Модуль `spring-boot-docker-compose` не «дополняет» конфигурацию, а подменяет её: он строит `ConnectionDetails` по найденному в compose контейнеру, и эти значения **перебивают** `spring.datasource.url`. Имя базы он берёт из переменной `CLICKHOUSE_DB` контейнера, а в `compose.yml` курса её нет — получается `default` вместо `tutorial`, и в логе видно чужой URL:
+
+```
+Database: jdbc:clickhouse://127.0.0.1:8123/default
+```
+
+Дальше падает Flyway — на чистом томе `Code: 81 ... Database tutorial does not exist`, на непустом `Code: 57 ... Table tutorial.page_views already exists` (историю миграций он ведёт уже в `default`). Включать интеграцию имеет смысл, когда compose-файл лежит в корне самого проекта и объявляет `CLICKHOUSE_DB` — как в кластерном compose из урока 11.
 
 ### Spring Boot auto-configuration
 
@@ -174,6 +266,7 @@ flyway.user=default
 flyway.password=clickhouse
 flyway.outOfOrder=true
 flyway.validateOnMigrate=false
+flyway.baselineOnMigrate=true
 ```
 
 ```bash
@@ -304,6 +397,8 @@ public record PageViewEvent(
 ## Буферизация вставок
 
 В production нельзя вставлять по одному событию. Нужен буфер:
+
+> **Внимание.** `@Scheduled` работает только при `@EnableScheduling` на конфигурации (см. точку входа выше). Без него отказ тихий: `POST /api/analytics/events` отвечает 200, буфер копится в памяти и не флашится никогда, а в ClickHouse пусто.
 
 ```java
 @Service
@@ -441,8 +536,14 @@ public class PageViewRepository {
 
 ```groovy
 // build.gradle
-testImplementation "org.testcontainers:clickhouse"
-testImplementation "org.testcontainers:junit-jupiter"
+testImplementation "org.testcontainers:testcontainers-clickhouse"
+testImplementation "org.testcontainers:testcontainers-junit-jupiter"
+```
+
+Версиями Testcontainers управляет BOM Spring Boot — для 4.1.0 это 2.0.5. Класс контейнера лежит в пакете `org.testcontainers.clickhouse`:
+
+```java
+import org.testcontainers.clickhouse.ClickHouseContainer;
 ```
 
 ```java
@@ -452,7 +553,10 @@ class PageViewRepositoryTest {
 
     @Container
     static ClickHouseContainer clickhouse =
-            new ClickHouseContainer("clickhouse/clickhouse-server:25.8.8.26");
+            new ClickHouseContainer("clickhouse/clickhouse-server:26.3.17.110")
+                    .withDatabaseName("tutorial")   // иначе БД будет default
+                    .withUsername("default")
+                    .withPassword("clickhouse");
 
     @DynamicPropertySource
     static void properties(DynamicPropertyRegistry registry) {
@@ -464,18 +568,30 @@ class PageViewRepositoryTest {
     @Autowired
     PageViewRepository repository;
 
+    @Autowired
+    PageViewWriter writer;
+
     @Test
     void shouldCountViews() {
-        // given: данные вставлены через Flyway-миграцию
+        // given: Flyway создал пустую таблицу — данные вставляем сами
+        var date = LocalDate.of(2026, 3, 1);
+        writer.insertBatch(List.of(
+                new PageViewEvent(date, date.atTime(10, 0), 1L, "/home", 42, "RU", "desktop"),
+                new PageViewEvent(date, date.atTime(10, 5), 2L, "/pricing", 17, "DE", "mobile")
+        ));
 
         // when
-        long count = repository.countViews(LocalDate.of(2026, 3, 1));
+        long count = repository.countViews(date);
 
         // then
-        assertThat(count).isGreaterThanOrEqualTo(0);
+        assertThat(count).isEqualTo(2);
     }
 }
 ```
+
+> Миграция `V20260401_1` только создаёт таблицу и не вставляет ни строки. Ассерт вида `isGreaterThanOrEqualTo(0)` в таком тесте зелёный всегда — он не проверяет ничего.
+
+> **Почему `withDatabaseName`.** По умолчанию контейнер поднимается с БД `default` и учёткой `test`/`test`, а `getJdbcUrl()` возвращает `jdbc:clickhouse://localhost:<port>/default`. Миграция при этом создаёт `tutorial.page_views` — и тест падает с `Code: 81. DB::Exception: Database tutorial does not exist. (UNKNOWN_DATABASE)`. Имя БД в контейнере и префикс в миграциях должны совпадать.
 
 ## Практика
 
@@ -494,6 +610,7 @@ class PageViewRepositoryTest {
 - Spring Boot auto-configuration создаёт `DataSource` и `JdbcTemplate` из `spring.datasource.*` — ручной бин не нужен
 - `application.yml` — env-переменные для production, `application-local.yml` — фиксированные значения для dev
 - Gradle: версии в `gradle.properties`, Flyway-адаптер и в `buildscript` (для CLI), и в `runtimeOnly` (для приложения)
+- В Spring Boot 4 автоконфигурация Flyway приходит только со стартером `spring-boot-starter-flyway`, а `flyway-database-clickhouse` остаётся на `10.24.0` и работает с любым Flyway 12/13
 - Flyway-миграции: `V{YYYYMMDD}_{N}__{name}.sql` в `src/main/resources/db/migration/`
 - `JdbcTemplate` — основной инструмент для SELECT-запросов
 - Вставка только батчами через `PreparedStatement.executeBatch()`
