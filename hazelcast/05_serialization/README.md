@@ -55,11 +55,13 @@ public record ProductValue(
 - **`@Nullable` поля** — если значение null, поле не занимает место в сериализованном виде
 - **Нет наследования** — record-ы финальны, что идеально для сериализации
 
+> **Про `@Nullable`:** это аннотация-документация, самой Hazelcast она не нужна — на сериализацию не влияет. Но код с ней не скомпилируется без зависимости: `error: cannot find symbol / symbol: class Nullable`. Бери JSpecify (`org.jspecify:jspecify:1.0.0`, `import org.jspecify.annotations.Nullable`) — её `@Target` включает `TYPE_USE`, поэтому она заведомо применима к компоненту record-а. Подойдёт и любая другая, чей `@Target` допускает `RECORD_COMPONENT`, `FIELD`, `PARAMETER`, `METHOD` или `TYPE_USE` — либо у которой `@Target` не объявлен вовсе (как у `jakarta.annotation.Nullable`, она тоже компилируется). Не подойдёт только аннотация, ограниченная несовместимыми целями вроде `@Target(ElementType.TYPE)`.
+
 ### Регистрация
 
-Регистрация нужна и на клиенте, и на сервере.
+Регистрацию выполняешь на клиенте — схема уезжает на сервер автоматически (подробности ниже).
 
-**Java Config (Spring Boot):**
+**Java Config (Spring Boot), embedded-инстанс:**
 
 ```java
 @Bean
@@ -73,6 +75,22 @@ HazelcastConfigCustomizer compactSerializationCustomizer() {
     };
 }
 ```
+
+> **Внимание:** `HazelcastConfigCustomizer` принимает серверный `Config` и вызывается только для embedded-инстанса. Если приложение подключается к кластеру клиентом (как во всём этом курсе), бин молча не сработает — регистрируй классы на бине `ClientConfig` (см. урок 3):
+>
+> ```java
+> @Bean
+> ClientConfig clientConfig() {
+>     ClientConfig config = new YamlClientConfigBuilder("hazelcast-client-local.yaml").build();
+>     config.getSerializationConfig()
+>         .getCompactSerializationConfig()
+>         .addClass(ProductValue.class)
+>         .addClass(ProductValue.PriceValue.class);
+>     return config;
+> }
+> ```
+>
+> Для record-ов промах незаметен — zero-config подхватит их и без регистрации. А вот `addSerializer(...)` с кастомным сериализатором так потеряется молча.
 
 **YAML (серверная конфигурация):**
 
@@ -168,7 +186,9 @@ public record ProductValue(long categoryId, String name) {}
 | Добавить nullable-поле | Да | Старые записи вернут null/default |
 | Удалить поле | Да | Поле игнорируется при чтении |
 | Переименовать поле | Нет | Старое поле станет null, новое не прочитается |
-| Изменить тип поля | Нет | Ошибка десериализации |
+| Изменить тип поля | Нет | **Молча** вернёт null/default — исключения не будет |
+
+> **Внимание:** смена типа поля — самый опасный случай, потому что она не падает. Записав `record EvoValue(long categoryId, String name)` и прочитав тем же кодом, где тип изменён, получишь: `long` → `String` даёт `EvoValue[categoryId=null, name=v1-name]`, `long` → `int` даёт `EvoValue[categoryId=0, name=v1-name]`. Ни исключения, ни предупреждения в логе — данные тихо теряются. Не рассчитывай на fail-fast: меняя тип поля, заводи новое поле рядом со старым.
 
 > **Практический совет:** При schema evolution делай новые поля `@Nullable` или используй примитивы с default-значениями. Это обеспечит обратную совместимость при rolling update.
 
@@ -249,7 +269,9 @@ public interface ProductMapper {
 | Compact class | Compact | `readCompact` / `writeCompact` |
 | `boolean[]`, `int[]`, ... | Array of X | `readArrayOfInt32` / ... |
 
-> `Instant`, `Duration`, `Enum` не поддерживаются напрямую — их нужно конвертировать (в `long`, `String`).
+> `Instant` и `Duration` не поддерживаются напрямую — их нужно конвертировать (в `long`, `String`). Попытка положить record с полем `Instant` даёт `HazelcastSerializationException: Failed to serialize ...`.
+>
+> А вот `Enum` zero-config сериализация обрабатывает сама: `record EnumValue(long id, Status status)` записывается и читается как есть — `EnumValue[id=1, status=ACTIVE]`. Enum хранится по имени константы, поэтому переименование или удаление константы ломает чтение старых данных — для долгоживущих данных надёжнее хранить `String`.
 
 ## Практика
 
@@ -258,7 +280,14 @@ public interface ProductMapper {
 3. Добавь новое nullable-поле в record, прочитай старые данные — убедись, что schema evolution работает
 4. Напиши кастомный `CompactSerializer` для класса с `Instant`-полем (конвертация в epoch millis)
 5. Создай маппер (ручной или MapStruct) для конвертации Domain <-> HZ DTO
-6. Сравни размер сериализованных данных: Compact vs `java.io.Serializable` (используй `SerializationService.toBytes`)
+6. Сравни размер сериализованных данных: Compact vs `java.io.Serializable`. Метода `toBytes` в API нет — размер считай через `toData`:
+
+```java
+SerializationService ss = ((HazelcastClientProxy) client).getSerializationService();
+int bytes = ss.toData(product).toByteArray().length;
+```
+
+> `SerializationService` лежит в пакете `com.hazelcast.internal.serialization` — это внутренний API, годится для замера, но не для продакшен-кода. Ожидаемый порядок: Compact ~90 байт против ~220 у `java.io.Serializable` на одном и том же объекте.
 
 ## Итоги урока
 
@@ -268,5 +297,6 @@ public interface ProductMapper {
 - Partial deserialization позволяет читать отдельные поля для индексов и Predicates без десериализации всего объекта
 - Регистрация DTO нужна только на клиенте — схема автоматически передаётся на сервер при первой записи; серверная регистрация нужна лишь для EntryProcessor и MapStore
 - Доменная модель не должна зависеть от Hazelcast — используй отдельные HZ DTO с маппером
-- `Instant`, `Enum`, `Duration` не поддерживаются напрямую — конвертируй в `long` или `String`
+- `Instant` и `Duration` не поддерживаются напрямую — конвертируй в `long` или `String`; `Enum` поддерживается, но хранится по имени константы
+- Смена типа поля не даёт ошибки — поле молча читается как null или default-значение
 - При rolling update новые nullable-поля обеспечивают обратную совместимость

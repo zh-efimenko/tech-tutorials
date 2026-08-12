@@ -6,8 +6,8 @@
 
 ## Требования
 
-- Java 17+
-- Spring Boot 3.x
+- Java 17+ (Hazelcast 5.7 поддерживает 17, 21 и 25)
+- Spring Boot 3.x–4.x
 - Gradle или Maven
 - Docker и Docker Compose (для запуска Hazelcast-сервера локально)
 - Базовое понимание распределённых систем
@@ -20,7 +20,7 @@
 docker run -d --name hazelcast \
   -p 5701:5701 \
   -e HZ_CLUSTERNAME=dev \
-  hazelcast/hazelcast:5.6.0
+  hazelcast/hazelcast:5.7.0
 
 # Проверка работоспособности
 curl http://localhost:5701/hazelcast/health/node-state

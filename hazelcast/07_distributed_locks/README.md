@@ -26,11 +26,17 @@ Hazelcast позволяет блокировать **отдельные клю�
 IMap<String, LockValue> lockMap = hazelcast.getMap("LOCKS");
 
 String key = "ORDER:42";
-boolean acquired = lockMap.tryLock(
-    key,
-    5, TimeUnit.SECONDS,     // Сколько ждать захвата
-    120, TimeUnit.SECONDS    // Автоосвобождение (lease time)
-);
+boolean acquired;
+try {
+    acquired = lockMap.tryLock(
+        key,
+        5, TimeUnit.SECONDS,     // Сколько ждать захвата
+        120, TimeUnit.SECONDS    // Автоосвобождение (lease time)
+    );
+} catch (InterruptedException e) {
+    Thread.currentThread().interrupt();
+    throw new IllegalStateException("Прервано ожидание блокировки: " + key, e);
+}
 
 if (acquired) {
     try {
@@ -43,6 +49,8 @@ if (acquired) {
     throw new RuntimeException("Не удалось захватить блокировку: " + key);
 }
 ```
+
+> **Важно:** версия `tryLock` с таймаутом объявляет checked `InterruptedException` — без `try/catch` код не компилируется (`unreported exception InterruptedException; must be caught or declared to be thrown`). Перехватив его, обязательно восстанавливай флаг прерывания через `Thread.currentThread().interrupt()`.
 
 ### tryLock vs lock
 
@@ -73,12 +81,29 @@ lockMap.tryLock(key,
 
 Типичный паттерн — абстрагировать блокировки за интерфейсом:
 
+Сначала — собственные типы, которых нет ни в JDK, ни в Hazelcast. `Lock` здесь — **не** `java.util.concurrent.locks.Lock`, а функциональный интерфейс с одним методом, чтобы блокировку можно было отдавать в try-with-resources:
+
+```java
+@FunctionalInterface
+public interface Lock extends AutoCloseable {
+    @Override
+    void close();   // Переопределяем без throws Exception — иначе try-with-resources заставит ловить checked
+}
+
+public class LockException extends RuntimeException {
+    public LockException(String message) { super(message); }
+    public LockException(String message, Throwable cause) { super(message, cause); }
+}
+```
+
 ```java
 public interface LockProvider {
     Lock lock(String namespace, Object id, Duration timeout);
     Lock lockAll(String namespace, Collection<?> ids, Duration timeout);
 }
 ```
+
+> **Важно:** если по привычке импортировать `java.util.concurrent.locks.Lock`, код не соберётся — `error: incompatible types: Lock is not a functional interface`: у стандартного `Lock` шесть методов, лямбдой его не вернуть.
 
 ```java
 public class HazelcastLockProvider implements LockProvider {
@@ -215,13 +240,18 @@ lockProvider.lock(LockNamespace.ORDER.name(), orderId, timeout);
 ### Зависимость
 
 ```groovy
-implementation 'net.javacrumbs.shedlock:shedlock-spring:6.2.0'
-implementation 'net.javacrumbs.shedlock:shedlock-provider-hazelcast4:6.2.0'
+implementation 'net.javacrumbs.shedlock:shedlock-spring:7.7.0'
+implementation 'net.javacrumbs.shedlock:shedlock-provider-hazelcast4:7.7.0'
 ```
 
 ### Конфигурация
 
+> **Внимание:** `LockProvider` и `HazelcastLockProvider` из ShedLock — это **другие** классы, а не те, что ты написал выше в этом уроке. Имена совпадают, поэтому импорты обязательны, а свой провайдер лучше назвать иначе (например, `KeyLockProvider`).
+
 ```java
+import net.javacrumbs.shedlock.core.LockProvider;
+import net.javacrumbs.shedlock.provider.hazelcast4.HazelcastLockProvider;
+
 @EnableSchedulerLock(defaultLockAtMostFor = "PT1m")
 @Configuration
 class ShedLockConfig {
@@ -237,9 +267,13 @@ class ShedLockConfig {
 
 ```java
 @Scheduled(fixedRate = 5000)
-@SchedulerLock(name = "processExpiredSessions", lockAtMostFor = "PT1m")
+@SchedulerLock(
+    name = "processExpiredSessions",
+    lockAtMostFor = "PT1m",
+    lockAtLeastFor = "PT10S"   // Обязательно для быстрых задач — см. предупреждение ниже
+)
 void processExpiredSessions() {
-    // Гарантированно выполняется только на одном инстансе
+    // Выполняется только на одном инстансе
     sessionService.cleanExpired();
 }
 ```
@@ -248,6 +282,10 @@ void processExpiredSessions() {
 |----------|----------|
 | `lockAtMostFor` | Максимальное время удержания блокировки (защита от падения) |
 | `lockAtLeastFor` | Минимальное время удержания (предотвращает повторный запуск на другом узле) |
+
+> **Побочный эффект:** `lockAtLeastFor` задаёт нижнюю границу и для интервала запусков. В примере выше объявлено `fixedRate = 5000`, но фактически задача пойдёт раз в 10 секунд: пока блокировка удерживается, тики других инстансов проходят вхолостую. Замер на двух инстансах даёт шаг около 10 с (обычно 9997-10011 мс, изредка тик проскакивает и шаг становится ~15 с). Учитывай это, подбирая пару `fixedRate` / `lockAtLeastFor`.
+
+> **Важно:** без `lockAtLeastFor` ShedLock снимает блокировку сразу по завершении задачи. Если задача отрабатывает за миллисекунды, второй инстанс на своём тике застаёт блокировку уже освобождённой и выполняет задачу повторно. Проверено на двух инстансах с `fixedRate = 3000`: только с `lockAtMostFor` дублируется практически каждый тик — за 70 секунд по 23 запуска на каждом инстансе, парами с разницей в десятки миллисекунд; с `lockAtLeastFor = "PT10S"` дубликаты исчезают. Правило: для коротких задач всегда задавай `lockAtLeastFor`, сравнимый с периодом запуска.
 
 ## Метрики блокировок
 
@@ -258,7 +296,17 @@ public Lock lock(String namespace, Object id, Duration timeout) {
     String key = namespace + ":" + id;
     long startTime = System.nanoTime();
 
-    boolean acquired = lockMap.tryLock(key, timeout, unit, leaseTime, unit);
+    boolean acquired;
+    try {
+        acquired = lockMap.tryLock(
+            key,
+            timeout.toMillis(), TimeUnit.MILLISECONDS,
+            LEASE_TIME.toMillis(), TimeUnit.MILLISECONDS
+        );
+    } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        throw new LockException("Прервано ожидание блокировки: " + key, e);
+    }
 
     // Время ожидания захвата
     long acquisitionTime = System.nanoTime() - startTime;
@@ -292,7 +340,7 @@ public Lock lock(String namespace, Object id, Duration timeout) {
 4. Реализуй multi-lock с сортировкой ключей — проверь, что при конкурентном захвате [1,2] и [2,1] deadlock не возникает
 5. Настрой ShedLock с Hazelcast и создай `@Scheduled`-задачу — запусти два инстанса и убедись, что задача выполняется только на одном
 6. Добавь метрики (Micrometer) на время захвата и удержания блокировки
-7. Проверь lease time: захвати блокировку, убей процесс (без `unlock()`), убедись что блокировка освободилась через lease time
+7. Проверь lease time: захвати блокировку с коротким lease (3 секунды), не вызывай `unlock()` и **оставь процесс живым** — второй поток получит блокировку примерно через 3 секунды. Убивать процесс для этой проверки нельзя: при обрыве клиентского соединения кластер снимает его блокировки сам, не дожидаясь lease time (замер: ~4,7 секунды при lease 120 секунд)
 
 ## Итоги урока
 

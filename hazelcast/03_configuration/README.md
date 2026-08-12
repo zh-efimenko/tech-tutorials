@@ -51,9 +51,9 @@ hazelcast:
       backup-count: 2
       async-backup-count: 0
       split-brain-protection-ref: quorum
+      per-entry-stats-enabled: true    # Нужен для LatestUpdateMergePolicy — ключ уровня карты
       merge-policy:
         class-name: LatestUpdateMergePolicy
-        per-entry-stats-enabled: true
       indexes:
         - type: HASH
           attributes: [ "categoryId" ]
@@ -87,14 +87,33 @@ hazelcast:
         enabled: true
         member-list:
           - localhost
-  rest-api:
-    enabled: true
-    endpoint-groups:
-      HEALTH_CHECK:
-        enabled: true
+    rest-api:
+      enabled: true
+      endpoint-groups:
+        HEALTH_CHECK:
+          enabled: true
 ```
 
 > **Совет:** REST API полезен для быстрой диагностики: `curl http://localhost:5701/hazelcast/health/node-state`
+
+> **Внимание:** `rest-api` — секция **внутри** `network`, а не на одном уровне с ней. Если поставить её рядом с `network:`, узел не стартует: `extraneous key [rest-api] is not permitted / instance location: #/hazelcast`. В чистом `Config` и в собственном YAML REST выключен, и без этой секции любой curl к `/hazelcast/health/...` даст в логе узла `IllegalStateException: REST API is not enabled`. Обрати внимание: стоковый образ включает REST за тебя (`<rest-api enabled="true">` в его `hazelcast-docker.xml`), поэтому переход на свой конфиг незаметно отключает health-эндпоинты, которыми ты пользовался с урока 1.
+
+### Как отдать свой YAML docker-образу
+
+Образ `hazelcast/hazelcast` грузит собственный конфиг из `/opt/hazelcast/config/hazelcast-docker.xml`. Чтобы он взял твой файл, смонтируй его и укажи путь через `JAVA_OPTS`:
+
+```bash
+docker run -d --name hz-local -p 5701:5701 \
+  -v "$PWD/conf:/conf" \
+  -e JAVA_OPTS="-Dhazelcast.config=/conf/hazelcast-local.yaml" \
+  hazelcast/hazelcast:5.7.0
+
+curl http://localhost:5701/hazelcast/health/node-state   # "ACTIVE"
+```
+
+> **Внимание:** переменная `JAVA_OPTS_ADDITIONAL` для этого не годится — путь до конфига через неё не подхватывается, и образ молча продолжит грузить свой `hazelcast-docker.xml`. Проверяй по первой строке лога: `Loading configuration '/conf/hazelcast-local.yaml' from System property 'hazelcast.config'`.
+>
+> Свой YAML **полностью заменяет** конфиг образа, включая то, что образ включал за тебя. В частности, в `hazelcast-docker.xml` стоит `<jet enabled="true">`, а в чистом `Config` движок Jet выключен — так что после перехода на свой файл SQL-запросы начнут падать с `The Jet engine is disabled`, пока не добавишь `jet: { enabled: true }` (см. урок 6).
 
 ## Клиентская конфигурация
 
@@ -108,7 +127,8 @@ hazelcast-client:
   instance-name: my-app
 
   network:
-    auto-detection: false
+    auto-detection:
+      enabled: false
     cluster-members:
       - hazelcast-headless.default.svc.cluster.local:5701
 
@@ -131,6 +151,8 @@ hazelcast-client:
 | `reconnect-mode: ASYNC` | Переподключение не блокирует потоки | Операции получат исключение, но приложение продолжит работать |
 | `cluster-connect-timeout-millis: -1` | Бесконечные попытки | Кластер может быть временно недоступен при rolling update |
 | `jitter: 0.3` | 30% случайного разброса | Предотвращает thundering herd — все клиенты не ломятся одновременно |
+
+> **Внимание:** `auto-detection` — это объект с полем `enabled`, а не булев флаг. Написав `auto-detection: false`, получишь при загрузке конфига `expected type: JSONObject, found: Boolean`.
 
 ### Локальная клиентская конфигурация
 
@@ -207,6 +229,8 @@ Spring Boot автоматически создаёт `HazelcastInstance`, ес�
 5. Бин `Config` → создаёт embedded-инстанс
 6. Файл `hazelcast.yaml` в classpath
 
+> **Spring Boot 3.x vs 4.x:** в Boot 3 автоконфигурация лежит в `spring-boot-autoconfigure` (пакет `org.springframework.boot.autoconfigure.hazelcast`) и включается самим фактом наличия Hazelcast в classpath. В Boot 4 её вынесли в отдельный модуль — добавляй `org.springframework.boot:spring-boot-starter-hazelcast`, а классы (`HazelcastProperties`, `HazelcastConfigCustomizer`) переехали в пакет `org.springframework.boot.hazelcast.autoconfigure`. Сам `com.hazelcast:hazelcast` стартер тянет транзитивно, но версией **5.5.0** (она прописана в POM `spring-boot-hazelcast:4.1.0`). Чтобы работать на 5.7.0, объявляй зависимость явно — она переопределит транзитивную.
+
 ### Указание файла конфигурации
 
 ```yaml
@@ -253,6 +277,19 @@ class HazelcastCustomization {
 ```
 
 > **Важно:** `HazelcastConfigCustomizer` применяется **до** создания `HazelcastInstance`. Это правильный способ программно дополнить YAML-конфигурацию в Spring Boot.
+
+> **Внимание:** кастомайзер работает только для **embedded**-инстанса. Его сигнатура — `void customize(com.hazelcast.config.Config)`, то есть он принимает серверный `Config`, и вызывается из `HazelcastServerConfiguration`. Если приложение подключается к кластеру как клиент (`spring.hazelcast.config` указывает на `hazelcast-client*.yaml`), бин кастомайзера **не будет вызван ни разу** — без ошибок и предупреждений, просто тихо. Для клиента регистрируй сериализаторы через бин `ClientConfig`:
+>
+> ```java
+> @Bean
+> ClientConfig clientConfig() {
+>     ClientConfig config = new YamlClientConfigBuilder("hazelcast-client-local.yaml").build();
+>     config.getSerializationConfig()
+>         .getCompactSerializationConfig()
+>         .addClass(ProductValue.class);
+>     return config;
+> }
+> ```
 
 ## Типизированные бины для IMap
 

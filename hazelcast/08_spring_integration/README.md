@@ -8,6 +8,23 @@ Hazelcast — это инфраструктурная зависимость. Б
 - Тестировать бизнес-логику в изоляции от инфраструктуры
 - Разделить ответственность: маппинг, сериализация, доступ к данным
 
+### Зависимости урока
+
+Всё, что понадобится в этом уроке (Spring Boot 4.1.0, Hazelcast 5.7.0):
+
+```groovy
+dependencies {
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-starter-hazelcast'  // Автоконфигурация
+    implementation 'com.hazelcast:hazelcast:5.7.0'                           // Поднимает транзитивную 5.5.0 до 5.7.0
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'   // MeterRegistry, @Timed
+    implementation 'io.micrometer:micrometer-registry-prometheus'            // /actuator/prometheus
+    implementation 'org.springframework.boot:spring-boot-starter-aspectj'    // AOP: @Aspect, TimedAspect
+}
+```
+
+> `HazelcastConfigCustomizer` и `HazelcastProperties` живут в пакете `org.springframework.boot.hazelcast.autoconfigure` — подробности про переезд из Boot 3 в Boot 4 в уроке 3.
+
 ## Hexagonal Architecture (Ports & Adapters)
 
 Рекомендуемый подход — **Hexagonal Architecture**. Доменная логика зависит от абстрактного порта (интерфейса), а Hazelcast-адаптер реализует этот порт.
@@ -91,7 +108,7 @@ class ProductHazelcastAdapter implements ProductPort {
 **Ключевые решения:**
 
 - `set()` вместо `put()` — не нужно возвращаемое значение
-- `setAll()` вместо `putAll()` — не триггерит EntryListener (быстрее)
+- `setAll()` вместо `putAll()` — не возвращает прежние значения (быстрее); на срабатывание `EntryListener` не влияет — оба варианта шлют события одинаково
 - `getAll()` вместо цикла `get()` — один сетевой вызов
 - `removeAll(predicate)` — server-side удаление
 
@@ -149,13 +166,16 @@ class HazelcastMapsConfig {
 class SessionHazelcastAdapter implements SessionPort {
 
     private final IMap<String, SessionValue> sessionsMap;
+    private final SessionMapper mapper;
     private final Duration sessionTtl;
 
     SessionHazelcastAdapter(
         IMap<String, SessionValue> sessionsMap,
+        SessionMapper mapper,
         @Value("${app.session.ttl:PT30M}") Duration sessionTtl
     ) {
         this.sessionsMap = sessionsMap;
+        this.mapper = mapper;
         this.sessionTtl = sessionTtl;
     }
 
@@ -196,7 +216,7 @@ public Map<String, Message> getAndErase(Collection<String> keys) {
 
 ## Метрики на адаптере
 
-Добавь `@Timed` для автоматического сбора метрик каждого метода адаптера:
+Добавь `@Timed` для сбора метрик каждого метода адаптера:
 
 ```java
 @Component
@@ -206,10 +226,28 @@ class ProductHazelcastAdapter implements ProductPort {
 }
 ```
 
-Это даёт метрики:
+Это даёт метрики (имена в формате Prometheus, эндпоинт `/actuator/prometheus`):
 - `cache_port_seconds_count{port="ProductPort", method="findById"}` — количество вызовов
 - `cache_port_seconds_sum{port="ProductPort", method="findById"}` — суммарное время
 - `cache_port_seconds_max{port="ProductPort", method="findById"}` — максимальное время
+
+> В `/actuator/metrics` та же метрика называется просто `cache_port` — суффиксы `_count`/`_sum`/`_max` это прометеевское представление трёх измерений (`COUNT`, `TOTAL_TIME`, `MAX`). Чтобы увидеть имена как выше, нужен `micrometer-registry-prometheus` в зависимостях и `prometheus` в `management.endpoints.web.exposure.include`.
+
+> **Внимание:** сама по себе аннотация `@Timed` ничего не делает — её обрабатывает аспект `TimedAspect`, а Spring Boot 4 его не создаёт по умолчанию. С одним лишь `@Timed` в `/actuator/metrics` не появится ни одной метрики `cache_port*`, и никакой ошибки в логе не будет. Нужны два шага:
+>
+> ```groovy
+> implementation 'org.springframework.boot:spring-boot-starter-actuator'
+> implementation 'org.springframework.boot:spring-boot-starter-aspectj'   // AOP на classpath обязателен
+> ```
+>
+> ```java
+> @Bean
+> TimedAspect timedAspect(MeterRegistry registry) {
+>     return new TimedAspect(registry);
+> }
+> ```
+>
+> Альтернатива явному бину — свойство `management.observations.annotations.enabled=true`: автоконфигурация `MetricsAspectsAutoConfiguration` создаст аспект сама, но она условна именно по этому свойству.
 
 ## Обработка ошибок
 

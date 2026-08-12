@@ -98,23 +98,28 @@ products.removeAll(Predicates.equal("categoryId", 42L));
 **YAML (серверная конфигурация):**
 
 ```yaml
-map:
-  products:
-    indexes:
-      - type: HASH
-        attributes: [ "categoryId" ]
-      - type: SORTED
-        attributes: [ "price" ]
-      - type: BITMAP
-        attributes: [ "status" ]
+hazelcast:
+  map:
+    products:
+      indexes:
+        - type: HASH
+          attributes: [ "categoryId" ]
+        - type: SORTED
+          attributes: [ "price.amount" ]   # Индексируем скаляр, а не вложенный record
+        - type: BITMAP
+          attributes: [ "status" ]
 ```
+
+> **Внимание:** индексировать можно только сравнимые (`Comparable`) значения — то есть конкретные поля, а не вложенные объекты. Если указать `attributes: [ "price" ]`, где `price` — вложенный record `PriceValue`, узел стартует нормально, но **любая запись в карту** упадёт: `java.lang.IllegalArgumentException: It is not allowed to use a type that is not Comparable: class com.hazelcast.internal.serialization.impl.compact.DeserializedGenericRecord`. В Spring Boot-приложении из урока 8 это выглядит как HTTP 500 на каждом `save`.
+
+> **Про корневой ключ:** здесь и далее YAML-фрагменты показаны от `map:` для краткости. В файле конфигурации всё это должно лежать под корневым `hazelcast:` — иначе узел не стартует: `exactly one of [hazelcast], [hazelcast-client] and [hazelcast-client-failover] should be present in the root schema document, 0 are present`.
 
 **Java Config:**
 
 ```java
 MapConfig productsConfig = new MapConfig("products");
 productsConfig.addIndexConfig(new IndexConfig(IndexType.HASH, "categoryId"));
-productsConfig.addIndexConfig(new IndexConfig(IndexType.SORTED, "price"));
+productsConfig.addIndexConfig(new IndexConfig(IndexType.SORTED, "price.amount"));
 productsConfig.addIndexConfig(new IndexConfig(IndexType.BITMAP, "status"));
 ```
 
@@ -125,7 +130,7 @@ map:
   products:
     indexes:
       - type: SORTED
-        attributes: [ "categoryId", "price" ]  # Составной индекс
+        attributes: [ "categoryId", "price.amount" ]  # Составной индекс
 ```
 
 Составной индекс ускоряет запросы по `categoryId`, по `categoryId + price`, но **не** по `price` отдельно (как и в SQL-базах).
@@ -193,19 +198,44 @@ products.values(Predicates.equal("__key.region", "EU"));
 
 ## SQL-запросы (альтернатива Predicates)
 
-Hazelcast 5.x поддерживает SQL как альтернативу Predicates API:
+Hazelcast 5.x поддерживает SQL как альтернативу Predicates API. В отличие от Predicates, SQL требует двух вещей: включённого движка Jet и объявленного маппинга карты.
 
 ```java
+// Один раз на кластер: объявляем карту как SQL-таблицу
+hazelcast.getSql().execute("""
+    CREATE MAPPING products (
+        __key      VARCHAR,
+        categoryId BIGINT,
+        name       VARCHAR,
+        status     VARCHAR
+    )
+    TYPE IMap
+    OPTIONS ('keyFormat'='varchar',
+             'valueFormat'='compact',
+             'valueCompactTypeName'='com.example.cache.dto.ProductValue')
+    """);
+
 // Эквивалент Predicates.equal("categoryId", 42)
 try (SqlResult result = hazelcast.getSql().execute(
     "SELECT * FROM products WHERE categoryId = ?", 42L
 )) {
     for (SqlRow row : result) {
         String name = row.getObject("name");
-        long price = row.getObject("price.amount");
     }
 }
 ```
+
+> **Внимание:** для `valueFormat=compact` список колонок обязателен — без него `CREATE MAPPING` падает с `Column list is required for Compact format`. Само имя типа (`valueCompactTypeName`) должно совпадать с тем, под которым класс зарегистрирован на клиенте: при `addClass(...)` это полное имя класса.
+
+> **Внимание:** без `CREATE MAPPING` запрос падает с `HazelcastSqlException: Object 'products' not found, did you forget to CREATE MAPPING?`. Дефолтный docker-образ включает Jet за тебя (`<jet enabled="true">` в `hazelcast-docker.xml`), но как только ты подсунул узлу свой YAML (урок 3), Jet выключается вместе с ним, и тот же запрос даст `HazelcastSqlException: The Jet engine is disabled`. В своём конфиге добавляй явно:
+>
+> ```yaml
+> hazelcast:
+>   jet:
+>     enabled: true
+> ```
+
+> **Внимание:** до вложенных полей из SQL не достучаться так же, как из Predicates. `row.getObject("price.amount")` не работает: автоподсказка маппит вложенный compact-объект как `"price" OBJECT`, и такой маппинг падает с `Cannot derive Compact type for 'OBJECT'`, а попытка объявить путь вручную даёт `Invalid external name: this.price.amount`. Синтаксис `"price.amount"` — это Predicates API. Для SQL либо держи скаляры на верхнем уровне DTO, либо объявляй нужные колонки в `CREATE MAPPING` явным списком.
 
 ### Когда SQL, когда Predicates
 
@@ -243,7 +273,7 @@ IMap<OrderItemKey, OrderItem> items;
 1. Создай IMap с 10 000 записей, каждая с полями `categoryId`, `status`, `price`
 2. Выполни `values(Predicates.equal("categoryId", 5))` без индекса — замерь время
 3. Добавь HASH-индекс на `categoryId`, повтори запрос — сравни время
-4. Создай SORTED-индекс на `price` и выполни `between`-запрос
+4. Создай SORTED-индекс на `price.amount` и выполни `between`-запрос. Затем попробуй тот же индекс на `price` целиком и получи ошибку записи — так проще запомнить правило про `Comparable`
 5. Используй `removeAll(predicate)` для удаления всех записей с `status = "DELETED"`
 6. Создай составной предикат (AND/OR) и убедись, что индексы используются
 7. Выполни аналогичный запрос через SQL API и сравни результат с Predicates

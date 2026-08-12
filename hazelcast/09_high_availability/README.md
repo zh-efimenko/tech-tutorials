@@ -133,9 +133,9 @@ minimum-cluster-size = (общее количество узлов / 2) + 1
 ```yaml
 map:
   orders:
+    per-entry-stats-enabled: true    # Ключ уровня карты, не merge-policy
     merge-policy:
       class-name: LatestUpdateMergePolicy
-      per-entry-stats-enabled: true
 ```
 
 ### Доступные политики
@@ -149,6 +149,8 @@ map:
 | `DiscardMergePolicy` | Мержащая сторона отбрасывается | Когда нужно сохранить текущее |
 
 > `per-entry-stats-enabled: true` обязателен для `LatestUpdateMergePolicy` и `HigherHitsMergePolicy` — без него нет данных о timestamps и hit counts.
+
+> **Внимание:** это свойство уровня **карты**, а не `merge-policy`. Вложив его внутрь `merge-policy`, получишь отказ узла при старте: `extraneous key [per-entry-stats-enabled] is not permitted / instance location: #/hazelcast/map/orders/merge-policy`.
 
 ### Кастомная merge policy
 
@@ -168,8 +170,20 @@ public class CustomMergePolicy implements SplitBrainMergePolicy<Object, SplitBra
             ? mergingEntry.getValue()
             : existingEntry.getValue();
     }
+
+    @Override
+    public void writeData(ObjectDataOutput out) throws IOException {
+        // Класс без состояния — писать нечего
+    }
+
+    @Override
+    public void readData(ObjectDataInput in) throws IOException {
+        // Класс без состояния — читать нечего
+    }
 }
 ```
+
+> **Внимание:** `SplitBrainMergePolicy` расширяет `DataSerializable` — экземпляр политики сам передаётся между узлами, поэтому `writeData`/`readData` обязательны. Без них: `error: CustomMergePolicy is not abstract and does not override abstract method readData(ObjectDataInput) in DataSerializable`.
 
 ## Partition Groups
 
@@ -256,7 +270,7 @@ spec:
     spec:
       containers:
         - name: hazelcast
-          image: hazelcast/hazelcast:5.6.0
+          image: hazelcast/hazelcast:5.7.0
           ports:
             - containerPort: 5701
           env:
@@ -292,9 +306,9 @@ spec:
 
 1. Создай кластер из 3 узлов с `backup-count: 1`, положи данные, убей один узел — убедись, что данные доступны
 2. Настрой split-brain protection с `minimum-cluster-size: 2` — изолируй один узел (симуляция network partition) и проверь, что он отказывает в операциях
-3. Настрой `LatestUpdateMergePolicy` — запиши разные значения для одного ключа на двух сторонах split-brain, воссоедини кластер, проверь какое значение осталось
+3. Настрой `LatestUpdateMergePolicy` — запиши разные значения для одного ключа на двух сторонах split-brain, воссоедини кластер, проверь какое значение осталось. Бери для этого **отдельную карту без** `split-brain-protection-ref`: на карте из пункта 2 кворум просто не даст стороне-меньшинству записать значение (`SplitBrainProtectionException`), и конфликт не возникнет. При воссоединении в логах будет `is MERGING` и `is MERGED`
 4. Настрой `HOST_AWARE` partition group — запусти 4 узла на 2 хостах и проверь, что primary и backup на разных хостах
-5. Проверь graceful shutdown: останови узел с `GRACEFUL` policy, убедись что данные мигрировали (в логах будет `Migration completed`)
+5. Сначала положи в кластер данные (пустой кластер мигрировать нечего — на пустом `docker stop` с `GRACEFUL` даёт только `Running shutdown hook... Current node state: ACTIVE` → `Hazelcast Shutdown is completed`, без единой строки о миграциях). Затем проверь graceful shutdown: останови узел с `GRACEFUL` policy, убедись что данные мигрировали. Строки `Migration completed` в логах нет — смотри лог оставшегося узла-мастера, там будет последовательность `Shutdown request of Member [...] is handled` → `Repartitioning cluster data. Migration tasks count: N` → `All migration tasks have been completed. (... remainingMigrations=0)` → `Removing Member` (эта строка появляется не сразу, а спустя ~30 секунд после миграций — мастер ждёт TCP-таймаутов) → `Partition balance is ok, no need to repartition`. Для сравнения убей второй узел через `docker kill` — при аварийной потере вместо этого будет `Successfully promoted N backups on M members`, то есть продвижение бэкапов вместо плановой миграции. Конкретные N зависят от числа узлов и распределения партиций
 6. Настрой Kubernetes discovery и запусти 3 Pod-а в StatefulSet
 
 ## Итоги урока

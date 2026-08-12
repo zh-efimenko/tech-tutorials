@@ -218,12 +218,56 @@ hazelcast:
 
 ## Практика
 
-1. Запусти два Hazelcast-сервера в Docker с одним `cluster-name` и TCP-IP discovery, убедись что они образовали кластер (в логах будет `Members {size:2}`)
+1. Запусти два Hazelcast-сервера в Docker с одним `cluster-name` и TCP-IP discovery, убедись что они образовали кластер (в логах будет `Members {size:2, ver:2}`). Узлы должны быть в одной пользовательской сети и знать адреса друг друга:
+
+```bash
+docker network create hz-net
+
+# IP хоста в локальной сети (macOS; на Linux: hostname -I | awk '{print $1}')
+HOST_IP=$(ipconfig getifaddr en0)
+
+for n in 1 2; do
+  docker run -d --name hz-$n --network hz-net -p 570$n:5701 \
+    -e HZ_CLUSTERNAME=dev \
+    -e HZ_NETWORK_JOIN_MULTICAST_ENABLED=false \
+    -e HZ_NETWORK_JOIN_TCPIP_ENABLED=true \
+    -e HZ_NETWORK_JOIN_TCPIP_MEMBERLIST_0=$HOST_IP:5701 \
+    -e HZ_NETWORK_JOIN_TCPIP_MEMBERLIST_1=$HOST_IP:5702 \
+    -e HZ_NETWORK_PUBLICADDRESS=$HOST_IP:570$n \
+    hazelcast/hazelcast:5.7.0
+done
+
+docker logs hz-2 | grep -A3 "Members {"
+```
+
+Третий узел (понадобится в пункте 6) добавляется так же: `-p 5703:5701`, `HZ_NETWORK_PUBLICADDRESS=$HOST_IP:5703` и `..._MEMBERLIST_2=$HOST_IP:5703`.
+
+> **Важно:** список элементов в env-переменных задаётся индексами (`..._MEMBERLIST_0`, `..._MEMBERLIST_1`), а не через запятую — иначе member-list останется пустым и каждый узел соберёт свой кластер из одного участника.
+
+> **Важно:** в `HZ_NETWORK_PUBLICADDRESS` идёт **IP хоста с проброшенным портом**, а не имя контейнера. Узел анонсирует этот адрес и соседям, и клиентам. С именами контейнеров кластер соберётся, но smart-клиент, запущенный на хосте (пункт 2), зависнет навсегда: он получит список членов с именами вроде `hz-2`, которые с хоста не резолвятся, и будет бесконечно писать `Could not connect to member ..., reason ... UnknownHostException: hz-2`. Если клиент запускается контейнером в сети `hz-net`, имена контейнеров подойдут.
+
 2. Напиши клиентское приложение, которое подключается к кластеру и кладёт 1000 записей в IMap
 3. Останови один сервер и убедись, что данные по-прежнему доступны с клиента
 4. Запусти embedded-режим: создай `Config` и `Hazelcast.newHazelcastInstance(config)` в приложении, положи данные и прочитай
 5. Сравни латентность embedded vs client-server: замерь время 10 000 операций `put` и `get` в обоих режимах
-6. Запусти третий сервер и проверь в логах, что произошла перебалансировка партиций
+6. Запусти третий сервер и проверь перебалансировку партиций. Миграции пишет **только узел-мастер** (первый в списке членов) и только на уровне INFO:
+
+```bash
+docker logs hz-1 | grep -i "migration"
+# Repartitioning cluster data. Migration tasks count: 271
+# All migration tasks have been completed. (... plannedMigrations=271, completedMigrations=271, remainingMigrations=0)
+```
+
+Считай распределение с клиента:
+
+```java
+Map<String, Long> byOwner = client.getPartitionService().getPartitions().stream()
+    .filter(p -> p.getOwner() != null)
+    .collect(Collectors.groupingBy(p -> p.getOwner().getAddress().toString(), Collectors.counting()));
+System.out.println(byOwner); // до третьего узла: 2 записи по ~135, после: 3 по ~90
+```
+
+> **Важно:** таблица партиций создаётся лениво — при первой операции с данными. На кластере, куда ещё ничего не клали, у всех партиций `getOwner() == null`, снипет напечатает пустую карту `{}`, а миграций в логах не будет вообще. Сначала выполни пункт 2 (1000 записей), потом добавляй третий узел.
 
 ## Итоги урока
 

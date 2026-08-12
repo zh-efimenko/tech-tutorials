@@ -71,6 +71,8 @@ map.executeOnEntries(
 
 > **Важно:** EntryProcessor должен быть сериализуемым (Compact или IdentifiedDataSerializable), так как он передаётся на сервер.
 
+> **Внимание:** сериализуемости мало — код процессора **выполняется на узле**, поэтому класс должен физически лежать в classpath члена кластера. Против стокового контейнера из урока 1 пример упадёт: `com.hazelcast.nio.serialization.HazelcastSerializationException: java.lang.ClassNotFoundException: com.example.UpdateStatusProcessor`. Это принципиальное отличие EntryProcessor от Predicates: предикаты по compact-полям работают без Java-классов на сервере, а процессор — нет. Варианты: положить jar с классами в `/opt/hazelcast/bin/user-lib` образа, включить User Code Namespaces или гонять примеры на embedded-инстансе, где класс и так в classpath.
+
 ## Near Cache — локальный L1-кэш
 
 Near Cache — кэш на стороне клиента. При повторном чтении того же ключа данные берутся из памяти клиента без сетевого вызова.
@@ -181,6 +183,12 @@ productsMap.addEntryListener(new EntryAddedListener<String, ProductValue>() {
 public class ProductMapStore implements MapStore<String, ProductValue> {
 
     private final JdbcTemplate jdbc;
+    private final RowMapper<ProductValue> productRowMapper;
+
+    public ProductMapStore(JdbcTemplate jdbc, RowMapper<ProductValue> productRowMapper) {
+        this.jdbc = jdbc;
+        this.productRowMapper = productRowMapper;
+    }
 
     @Override
     public ProductValue load(String key) {
@@ -210,7 +218,10 @@ public class ProductMapStore implements MapStore<String, ProductValue> {
     @Override
     public Map<String, ProductValue> loadAll(Collection<String> keys) {
         // Batch load при старте кластера
-        // ...
+        return keys.stream().collect(Collectors.toMap(
+            key -> key,
+            this::load
+        ));
     }
 
     @Override
@@ -218,8 +229,22 @@ public class ProductMapStore implements MapStore<String, ProductValue> {
         // Вызывается при старте для предзагрузки всех ключей
         return jdbc.queryForList("SELECT id FROM products", String.class);
     }
+
+    @Override
+    public void storeAll(Map<String, ProductValue> entries) {
+        // Batch-запись: вызывается при write-behind вместо серии store()
+        entries.forEach(this::store);
+    }
+
+    @Override
+    public void deleteAll(Collection<String> keys) {
+        // Batch-удаление
+        keys.forEach(this::delete);
+    }
 }
 ```
+
+> **Важно:** `MapStore` требует все семь методов — `load`, `loadAll`, `loadAllKeys` (от `MapLoader`) плюс `store`, `storeAll`, `delete`, `deleteAll`. Забыв `storeAll` или `deleteAll`, получишь `error: ProductMapStore is not abstract and does not override abstract method deleteAll(Collection<String>) in MapStore`. Реализации через `forEach` выше — рабочий минимум, но в write-behind режиме именно `storeAll` даёт выигрыш, так что там его стоит написать как настоящий batch-INSERT.
 
 ### Конфигурация
 
@@ -246,6 +271,16 @@ map:
 ## CP Subsystem — строгие гарантии (Raft)
 
 Обычные структуры Hazelcast — **AP** (Available, Partition-tolerant) по CAP-теореме. CP Subsystem предоставляет **CP** (Consistent, Partition-tolerant) структуры, основанные на алгоритме Raft.
+
+> **Внимание: CP Subsystem — Enterprise-функция начиная с Hazelcast 5.5.** На Community Edition (`com.hazelcast:hazelcast`, образ `hazelcast/hazelcast`) любой вызов `getCPSubsystem().getAtomicLong(...)` падает:
+>
+> ```
+> java.lang.UnsupportedOperationException: CP subsystem is an Enterprise feature.
+> Please use the latest applicable Hazelcast Enterprise client to interact with
+> Enterprise clusters using CP.
+> ```
+>
+> До 5.4 включительно CP работал в Community. Если Enterprise-лицензии нет — для распределённых блокировок используй `IMap.tryLock` (урок 7), для генерации ID — sequence в PostgreSQL или Snowflake-подобный генератор. Примеры ниже приведены для полноты картины и требуют Enterprise-сборки.
 
 ### Атомарный счётчик
 
@@ -367,13 +402,21 @@ eventsMap.put("event-1",
     new HazelcastJsonValue("{\"type\":\"purchase\",\"amount\":42}")
 );
 
-// SQL по JSON-полям
+// SQL по JSON-полям: сначала объявляем маппинг, один раз на кластер
+hazelcast.getSql().execute(
+    "CREATE MAPPING events TYPE IMap " +
+    "OPTIONS ('keyFormat'='varchar', 'valueFormat'='json')"
+);
+
 SqlResult result = hazelcast.getSql().execute(
     "SELECT * FROM events WHERE JSON_VALUE(this, '$.type') = 'purchase'"
 );
+// [__key VARCHAR=event-1, this JSON={"type":"purchase","amount":42}]
 ```
 
 > Полезно для schema-less данных или когда нужно хранить JSON "как есть".
+
+> **Внимание:** без `CREATE MAPPING` запрос падает с `HazelcastSqlException: Object 'events' not found, did you forget to CREATE MAPPING?`. И помни про Jet: дефолтный docker-образ включает его сам, но embedded-инстанс из урока 10 (`getJetConfig().setEnabled(false)`) и любой свой YAML — нет, там будет `The Jet engine is disabled`.
 
 ## Сводная таблица
 
@@ -398,7 +441,7 @@ SqlResult result = hazelcast.getSql().execute(
 5. Используй Aggregations: посчитай количество, среднюю и максимальную цену товаров
 6. Используй Projection: загрузи только имена товаров без остальных полей
 7. Создай ITopic и отправь сообщение — убедись, что все подписчики получили его
-8. Настрой CP Subsystem с 3 членами и создай атомарный счётчик
+8. Убедись, что CP Subsystem недоступен в Community: вызови `hazelcast.getCPSubsystem().getAtomicLong("cnt").incrementAndGet()` и получи `UnsupportedOperationException`. Если есть Enterprise-лицензия — настрой CP Subsystem с 3 членами и создай атомарный счётчик
 
 ## Итоги урока
 
@@ -407,6 +450,6 @@ SqlResult result = hazelcast.getSql().execute(
 - ITopic и Reliable Topic — pub/sub внутри кластера для broadcast-событий и инвалидации кэшей
 - EntryListener реактивно реагирует на добавление, обновление, удаление и expiry записей
 - MapStore обеспечивает read-through и write-behind персистентность в БД без изменения клиентского кода
-- CP Subsystem (Raft) даёт линеаризуемые операции — атомарные счётчики, fenced locks, semaphores
+- CP Subsystem (Raft) даёт линеаризуемые операции — атомарные счётчики, fenced locks, semaphores, но начиная с 5.5 это Enterprise-функция
 - Aggregations и Projection экономят трафик, выполняя вычисления на сервере
 - Выбор между AP (IMap) и CP (CP Subsystem) зависит от требований к консистентности и допустимой латентности

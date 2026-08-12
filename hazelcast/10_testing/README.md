@@ -58,6 +58,17 @@ hazelcast:
 # В тестах используем embedded (серверный) инстанс
 ```
 
+> **Внимание:** одного файла `hazelcast.yaml` в `src/test/resources` мало. В приложении из уроков 3 и 8 в `src/main/resources` лежит клиентская конфигурация, а она в порядке разрешения стоит **выше** серверной (см. список приоритетов в уроке 3: `spring.hazelcast.config` и `hazelcast-client.yaml` идут раньше, чем `hazelcast.yaml`). Поэтому `@SpringBootTest` молча поднимет клиент и полезет в несуществующий кластер: в логе будет `Loading 'hazelcast-client.yaml' from the classpath` и затем `CLIENT_CONNECTED` — если снаружи случайно запущен docker-кластер, тесты «пройдут» на нём, а если нет — тест зависнет **бесконечно**, сыпля в лог `Could not connect to member ...`: `cluster-connect-timeout-millis: -1` из урока 3 означает вечные попытки, поэтому сборку придётся убивать руками. Перебей конфиг явно в тестовом профиле:
+>
+> ```yaml
+> # src/test/resources/application-test.yaml
+> spring:
+>   hazelcast:
+>     config: classpath:hazelcast.yaml
+> ```
+>
+> и пометь тест `@ActiveProfiles("test")`. Так же надёжно — вообще не полагаться на автоконфигурацию и поднимать инстанс руками, как в примере ниже.
+
 ### Минимальная Java-конфигурация
 
 Для быстрого старта отключи всё лишнее:
@@ -95,7 +106,7 @@ static void shutdownHazelcast() {
 }
 ```
 
-> **Зачем отключать Jet и метрики:** Тесты стартуют быстрее на 2-3 секунды. В CI это экономит минуты.
+> **Зачем отключать Jet и метрики:** тесты стартуют быстрее. На практике эффект скромнее заявленного — разница в замерах составила 30-150 мс на инстанс, а не секунды; сам старт embedded-инстанса на современном железе укладывается в 300-600 мс, а не в 2-3 секунды. Выигрыш всё равно стоит забирать: при сотнях тестов в CI миллисекунды складываются.
 
 ## Spring Boot интеграционные тесты
 
@@ -235,17 +246,21 @@ class LockProviderTest {
     }
 
     @Test
-    void shouldFailOnTimeout() {
-        // Захватить блокировку в основном потоке
+    void shouldFailOnTimeout() throws Exception {
+        // Захватить блокировку из ДРУГОГО потока — IMap.lock реентерабелен
+        // в рамках одного потока, поэтому из основного потока lockProvider
+        // получил бы блокировку без проблем и тест ничего бы не проверил
         IMap<String, String> lockMap = hazelcastInstance.getMap("LOCKS");
-        lockMap.lock("ORDER:42");
+        ExecutorService holder = Executors.newSingleThreadExecutor();
+        holder.submit(() -> lockMap.lock("ORDER:42")).get();
 
         try {
             // Попытка захватить из lockProvider — таймаут
             assertThrows(LockException.class,
                 () -> lockProvider.lock("ORDER", 42, Duration.ofMillis(100)));
         } finally {
-            lockMap.unlock("ORDER:42");
+            holder.submit(() -> lockMap.unlock("ORDER:42")).get();
+            holder.shutdown();
         }
     }
 
@@ -254,10 +269,16 @@ class LockProviderTest {
         // Два потока лочат [1,2] и [2,1] — без сортировки будет deadlock
         ExecutorService executor = Executors.newFixedThreadPool(2);
 
-        Future<?> f1 = executor.submit(() ->
-            lockProvider.lockAll("ORDER", List.of(1, 2), Duration.ofSeconds(5)));
-        Future<?> f2 = executor.submit(() ->
-            lockProvider.lockAll("ORDER", List.of(2, 1), Duration.ofSeconds(5)));
+        Future<?> f1 = executor.submit(() -> {
+            try (Lock lock = lockProvider.lockAll("ORDER", List.of(1, 2), Duration.ofSeconds(5))) {
+                // Критическая секция
+            }
+        });
+        Future<?> f2 = executor.submit(() -> {
+            try (Lock lock = lockProvider.lockAll("ORDER", List.of(2, 1), Duration.ofSeconds(5))) {
+                // Критическая секция
+            }
+        });
 
         // Оба должны завершиться без deadlock (таймаут теста 10 сек)
         assertTimeoutPreemptively(Duration.ofSeconds(10), () -> {
@@ -269,6 +290,8 @@ class LockProviderTest {
     }
 }
 ```
+
+> **Внимание:** обе задачи в тексте выше нерабочие в своём первоначальном виде. `shouldFailOnTimeout` захватывал `lockMap.lock` в основном потоке и тут же пытался взять его через `lockProvider` — блокировки Hazelcast реентерабельны в рамках одного потока, поэтому второй захват молча проходил, и `assertThrows` падал с `Expected LockException to be thrown, but nothing was thrown`. Нужен отдельный поток-держатель. `shouldPreventDeadlockWithSortedKeys` захватывал блокировки через `lockAll` и никогда их не освобождал — второй поток честно ждал 5 секунд и падал с `LockException: Не удалось захватить блокировку`. Возврат `Lock` нужно закрывать через try-with-resources, как и в проде.
 
 ## Тестирование TTL
 
@@ -294,7 +317,7 @@ void shouldExpireEntryAfterTTL() throws InterruptedException {
 
 | Рекомендация | Обоснование |
 |-------------|-------------|
-| Один embedded-инстанс на весь тестовый набор | Старт Hazelcast занимает 2-3 секунды |
+| Один embedded-инстанс на весь тестовый набор | Старт Hazelcast занимает сотни миллисекунд — на десятках тестов складывается в заметное время |
 | `clear()` в `@BeforeEach` | Каждый тест работает с чистой картой |
 | Отключить Jet, метрики, discovery | Ускоряет старт |
 | SpyBean вместо MockBean | Реальные операции + проверка вызовов |
@@ -318,5 +341,5 @@ void shouldExpireEntryAfterTTL() throws InterruptedException {
 - `@MockitoSpyBean` на IMap позволяет одновременно использовать реальные операции и проверять вызовы
 - Каждый тест начинает с `clear()` — изоляция между тестами
 - Тесты Predicates требуют настроенных индексов в тестовой конфигурации
-- Тесты блокировок проверяют таймаут, deadlock prevention (сортировка ключей) и reentrancy
+- Тесты блокировок проверяют таймаут (из отдельного потока — `IMap.lock` реентерабелен в своём потоке) и deadlock prevention (сортировка ключей)
 - `@Tag("integration")` разделяет unit и интеграционные тесты для CI/CD
