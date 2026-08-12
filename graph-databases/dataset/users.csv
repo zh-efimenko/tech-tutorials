@@ -1,0 +1,31 @@
+email,name,city,registeredAt,status,referredBy
+anna@shop.io,Анна Ковалёва,Минск,2025-11-04,active,
+ivan@shop.io,Иван Петров,Минск,2026-01-17,active,anna@shop.io
+petr@shop.io,Пётр Сидоров,Гомель,2026-01-22,active,anna@shop.io
+maria@shop.io,Мария Волкова,Брест,2025-12-09,active,
+oleg@shop.io,Олег Новиков,Минск,2026-02-03,active,ivan@shop.io
+daria@shop.io,Дарья Морозова,Витебск,2026-02-11,active,ivan@shop.io
+sergey@shop.io,Сергей Зайцев,Минск,2025-10-28,active,
+elena@shop.io,Елена Соколова,Гродно,2026-01-05,active,maria@shop.io
+nikita@shop.io,Никита Орлов,Минск,2026-03-02,active,oleg@shop.io
+olga@shop.io,Ольга Лебедева,Могилёв,2025-12-19,active,maria@shop.io
+artem@shop.io,Артём Козлов,Минск,2026-02-24,active,daria@shop.io
+julia@shop.io,Юлия Романова,Брест,2026-01-30,active,elena@shop.io
+denis@shop.io,Денис Макаров,Гомель,2025-11-15,active,sergey@shop.io
+ksenia@shop.io,Ксения Белова,Минск,2026-03-11,active,nikita@shop.io
+roman@shop.io,Роман Ершов,Витебск,2026-02-17,active,
+alina@shop.io,Алина Крылова,Минск,2026-03-19,active,artem@shop.io
+egor@shop.io,Егор Тарасов,Гродно,2025-12-01,active,denis@shop.io
+vera@shop.io,Вера Гусева,Минск,2026-01-11,active,olga@shop.io
+pavel@shop.io,Павел Фомин,Могилёв,2026-02-28,active,roman@shop.io
+lidia@shop.io,Лидия Мельник,Брест,2026-03-24,active,julia@shop.io
+timur@shop.io,Тимур Савельев,Минск,2025-11-27,active,sergey@shop.io
+sofia@shop.io,София Данилова,Минск,2026-03-06,active,ksenia@shop.io
+gleb@shop.io,Глеб Панов,Гомель,2026-01-25,active,egor@shop.io
+nina@shop.io,Нина Куликова,Витебск,2026-02-08,active,vera@shop.io
+kirill@shop.io,Кирилл Соловьёв,Минск,2026-03-15,active,alina@shop.io
+mult1@shop.io,Андрей Смирнов,Минск,2026-03-20,active,
+mult2@shop.io,А. Смирнов,Минск,2026-03-21,active,mult1@shop.io
+mult3@shop.io,Андрей С.,Минск,2026-03-22,active,mult1@shop.io
+mult4@shop.io,Смирнов А. В.,Минск,2026-03-23,active,mult2@shop.io
+banned1@shop.io,Виктор Грачёв,Минск,2026-02-14,banned,

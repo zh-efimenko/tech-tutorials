@@ -1,0 +1,25 @@
+sku,title,price,brand,categoryId
+CM-100,Кофеварка Aroma Pro,4990.00,Aroma,c-coffee-drip
+CM-101,Кофеварка Aroma Mini,3290.00,Aroma,c-coffee-drip
+CM-110,Эспрессо-машина Barista One,18990.00,Barista,c-coffee-espresso
+CM-111,Эспрессо-машина Barista Duo,26490.00,Barista,c-coffee-espresso
+CM-120,Рожковая кофеварка Crema S,9990.00,Crema,c-coffee-espresso
+GR-200,Кофемолка Fine Grind,2490.00,Fine,c-grinders
+GR-201,Кофемолка Fine Burr Pro,7490.00,Fine,c-grinders
+GR-210,Кофемолка Aroma Compact,1990.00,Aroma,c-grinders
+KT-300,Чайник Steam Classic,1990.00,Steam,c-kettles
+KT-301,Чайник Steam Glass,2790.00,Steam,c-kettles
+KT-310,Термопот Steam Keep,5490.00,Steam,c-kettles
+BL-400,Блендер Turbo Max,3490.00,Turbo,c-blenders
+BL-401,Блендер Turbo Hand,1790.00,Turbo,c-blenders
+BL-410,Стационарный блендер Crema Pro,6990.00,Crema,c-blenders
+HP-500,Наушники Wave TWS,4290.00,Wave,c-headphones-tws
+HP-501,Наушники Wave TWS Pro,7990.00,Wave,c-headphones-tws
+HP-510,Наушники Wave Studio,11990.00,Wave,c-headphones
+HP-511,Наушники Echo Light,2490.00,Echo,c-headphones
+SP-600,Колонка Echo Mini,3990.00,Echo,c-speakers
+SP-601,Колонка Echo Room,8990.00,Echo,c-speakers
+LP-700,Настольная лампа Lumen Desk,2990.00,Lumen,c-lamps
+LP-701,Торшер Lumen Floor,6490.00,Lumen,c-lamps
+TX-800,Плед Cozy Wool,3290.00,Cozy,c-textile
+TX-801,Комплект полотенец Cozy Soft,1590.00,Cozy,c-textile

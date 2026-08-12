@@ -1,0 +1,52 @@
+name: graph-databases
+
+services:
+  neo4j:
+    image: neo4j:2026.07.1-community
+    container_name: neo4j
+    restart: unless-stopped
+    environment:
+      - NEO4J_AUTH=neo4j/graphpassword
+      # Плагины ставятся при старте из jar-файлов, лежащих внутри образа.
+      # Под календарным версионированием APOC и GDS выходят синхронно с ядром,
+      # поэтому несовместимого jar тут не будет.
+      - NEO4J_PLUGINS=["apoc","graph-data-science"]
+      # Нужно для LOAD CSV из локальных файлов в уроке 09
+      - NEO4J_apoc_import_file_enabled=true
+      - NEO4J_apoc_export_file_enabled=true
+      # Память под датасет курса и проекции графа в GDS (треки 4-5)
+      - NEO4J_server_memory_pagecache_size=1G
+      - NEO4J_server_memory_heap_initial__size=1G
+      - NEO4J_server_memory_heap_max__size=2G
+    ports:
+      - "7474:7474"   # HTTP, Neo4j Browser
+      - "7687:7687"   # Bolt, драйверы и cypher-shell
+    volumes:
+      - neo4j-data:/data
+      - neo4j-logs:/logs
+      - ./dataset:/import   # CSV-файлы датасета для LOAD CSV
+      # /plugins намеренно не монтируется: jar-ы перекачиваются под текущую
+      # версию образа, поэтому апгрейд Neo4j не оставит устаревший плагин
+    healthcheck:
+      test: [ "CMD-SHELL", "cypher-shell -u neo4j -p graphpassword 'RETURN 1' || exit 1" ]
+      interval: 10s
+      timeout: 10s
+      retries: 15
+      start_period: 60s
+
+  # Локальные эмбеддинги для трека 6. На треках 1-5 не нужен, поэтому вынесен
+  # в профиль: docker compose --profile rag up -d
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    restart: unless-stopped
+    profiles: [ "rag" ]
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+
+volumes:
+  neo4j-data:
+  neo4j-logs:
+  ollama-data:

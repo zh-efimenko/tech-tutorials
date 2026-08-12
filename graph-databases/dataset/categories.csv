@@ -1,0 +1,15 @@
+categoryId,name,parentId
+c-root-kitchen,Кухня,
+c-root-electronics,Электроника,
+c-root-home,Дом,
+c-coffee,Кофеварки,c-root-kitchen
+c-coffee-espresso,Эспрессо-кофеварки,c-coffee
+c-coffee-drip,Капельные кофеварки,c-coffee
+c-grinders,Кофемолки,c-root-kitchen
+c-kettles,Чайники,c-root-kitchen
+c-blenders,Блендеры,c-root-kitchen
+c-headphones,Наушники,c-root-electronics
+c-headphones-tws,Беспроводные наушники,c-headphones
+c-speakers,Колонки,c-root-electronics
+c-lamps,Освещение,c-root-home
+c-textile,Текстиль,c-root-home
