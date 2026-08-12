@@ -47,9 +47,12 @@ compose.override.yaml
 
 ```bash
 # Скопируй в .env и настрой под своё окружение
+PROJECT_NAME=myapp
 DB_PORT=5432
 REDIS_PORT=6379
 ```
+
+В шаблоне должны быть ровно те переменные, которые compose-файл действительно подставляет (`${PROJECT_NAME:-myapp}`, `${DB_PORT:-5432}` — см. урок 9). Переменная, которой нет в compose-файле, только вводит в заблуждение: студент правит `.env`, а ничего не меняется.
 
 ## Именование контейнеров
 
@@ -58,7 +61,7 @@ REDIS_PORT=6379
 ```yaml
 services:
   db:
-    image: postgres:17.5
+    image: postgres:18.4
     container_name: ${PROJECT_NAME:-myapp}_postgres
 ```
 
@@ -71,7 +74,7 @@ Spring Boot ждёт готовности сервисов перед подкл
 ```yaml
 services:
   db:
-    image: postgres:17.5
+    image: postgres:18.4
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U demo"]
       interval: 5s
@@ -79,7 +82,7 @@ services:
       retries: 5
 
   redis:
-    image: redis:7.4
+    image: redis:8.10
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -87,9 +90,9 @@ services:
       retries: 5
 
   kafka:
-    image: confluentinc/cp-kafka:7.2.1
+    image: apache/kafka:4.3.1
     healthcheck:
-      test: ["CMD", "nc", "-z", "localhost", "29092"]
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -108,10 +111,10 @@ services:
 # Хорошо — воспроизводимо
 services:
   db:
-    image: postgres:17.5
+    image: postgres:18.4
 ```
 
-Обновляй версии осознанно, проверяя changelog.
+Обновляй версии осознанно, проверяя changelog. Свежий пример: в `postgres:18` том переехал с `/var/lib/postgresql/data` на `/var/lib/postgresql`, а `PGDATA` стал версионным (`/var/lib/postgresql/18/docker`). Compose-файл со старым путём монтирования после апгрейда мажорной версии молча получит пустую базу.
 
 ## CI/CD
 
@@ -125,7 +128,7 @@ services:
 # GitHub Actions
 services:
   postgres:
-    image: postgres:17.5
+    image: postgres:18.4
     env:
       POSTGRES_DB: test
       POSTGRES_USER: test
@@ -155,7 +158,7 @@ spring:
 ```yaml
 # GitHub Actions
 steps:
-  - uses: actions/checkout@v4
+  - uses: actions/checkout@v7
   - name: Run tests
     run: ./gradlew test
     # Docker Compose поднимется автоматически через spring-boot-docker-compose
@@ -185,7 +188,7 @@ docker rm -f demo_postgres
 ### Ошибка: Spring Boot не находит compose-файл
 
 ```
-No Docker Compose file found
+java.lang.IllegalStateException: No Docker Compose file found in directory '/path/to/project/.'
 ```
 
 **Причина:** compose-файл не в рабочей директории или называется нестандартно.
@@ -198,19 +201,19 @@ spring:
       file: path/to/compose.yaml
 ```
 
-### Ошибка: ConnectionDetails не создаются
+### Ошибка: подключение не настроилось
 
 ```
-No ConnectionDetails found for service 'my-custom-db'
+Failed to configure a DataSource: 'url' attribute is not specified and no embedded datasource could be configured
 ```
 
-**Причина:** Spring Boot не распознаёт образ.
+**Причина:** Spring Boot не распознал образ, ConnectionDetails не созданы. Отдельного сообщения про нераспознанный сервис в логах не будет — падает уже автоконфигурация DataSource.
 
 **Решение:** добавь лейбл `org.springframework.boot.service-connection`:
 ```yaml
 services:
   my-custom-db:
-    image: myregistry.io/custom-postgres:17
+    image: myregistry.io/custom-postgres:18
     labels:
       org.springframework.boot.service-connection: postgres
 ```
@@ -218,7 +221,8 @@ services:
 ### Ошибка: таймаут ожидания готовности
 
 ```
-Timed out waiting for container to be ready
+org.springframework.boot.docker.compose.lifecycle.ReadinessTimeoutException:
+Readiness timeout of PT2M reached while waiting for services [my_worker]
 ```
 
 **Причина:** сервис долго стартует, а readiness timeout слишком маленький.
@@ -265,7 +269,7 @@ services:
 1. Добавь `spring-boot-docker-compose` через `testAndDevelopmentOnly`
 2. Создай `compose.yaml` с полным стеком и healthcheck для каждого сервиса
 3. Создай `compose-test.yaml` с минимальным набором сервисов и сдвинутыми портами
-4. Создай `application-test.yml` с `skip.in-tests: false` и `file: compose-test.yaml`
+4. Создай `application-test.yml` с `skip.in-tests: false`, `file: compose-test.yaml`, отдельным именем Compose-проекта (`arguments: ["--project-name=myapp-test"]`) и `stop.command: down` с `--volumes` — без имени проекта тесты уйдут в dev-базу, без `--volumes` потащат за собой данные прошлого прогона (урок 8)
 5. Добавь `compose.override.yaml` и `.env` в `.gitignore`
 6. Создай `.env.example` с шаблоном переменных
 7. Пометь UI-сервисы и дублирующие ноды лейблом `org.springframework.boot.ignore: true`
@@ -280,7 +284,7 @@ services:
 3. Добавь healthcheck для PostgreSQL и Redis. Включи DEBUG-логирование и убедись, что Spring Boot ждёт healthy-статуса
 4. Смоделируй падение приложения (kill -9) при `lifecycle-management: start_only` — убедись, что при повторном запуске контейнеры переиспользуются
 5. Настрой GitHub Actions workflow с `./gradlew test` — убедись, что тесты проходят в CI с Docker Compose
-6. Попробуй собрать `./gradlew bootJar` и запустить JAR напрямую — убедись, что Docker Compose интеграция не активируется (зависимости нет в classpath)
+6. Собери `./gradlew bootJar` и запусти JAR напрямую. Приложение упадёт с `Failed to configure a DataSource: 'url' attribute is not specified and no embedded datasource could be configured` — это и есть доказательство: контейнеры никто не поднял, ConnectionDetails никто не создал, интеграции в артефакте нет. Проверь это и напрямую: `unzip -l build/libs/*.jar | grep docker-compose` не найдёт ни одной записи
 
 ## Итоги урока
 

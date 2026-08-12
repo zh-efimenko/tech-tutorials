@@ -9,7 +9,7 @@ Docker Compose поддерживает собственные профили �
 ```yaml
 services:
   db:
-    image: postgres:17.5
+    image: postgres:18.4
     ports:
       - "5432:5432"
     environment:
@@ -18,30 +18,29 @@ services:
       POSTGRES_PASSWORD: demo
 
   redis:
-    image: redis:7.4
+    image: redis:8.10
     ports:
       - "6379:6379"
 
   kafka:
-    image: confluentinc/cp-kafka:7.2.1
+    image: apache/kafka:4.3.1
     ports:
       - "9092:9092"
     profiles:
       - messaging
-    depends_on:
-      - zookeeper
-
-  zookeeper:
-    image: confluentinc/cp-zookeeper:7.2.1
-    ports:
-      - "2181:2181"
     environment:
-      ZOOKEEPER_CLIENT_PORT: 2181
-    profiles:
-      - messaging
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:29092,CONTROLLER://:29093,PLAINTEXT_HOST://:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:29093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
 
   hz_1:
-    image: hazelcast/hazelcast:5.6-jdk21
+    image: hazelcast/hazelcast:5.7
     ports:
       - "5701:5701"
     profiles:
@@ -63,7 +62,7 @@ spring:
         active: messaging, cache
 ```
 
-Spring Boot выполнит `docker compose --profile messaging --profile cache up`. Kafka, Zookeeper и Hazelcast запустятся вместе с PostgreSQL и Redis.
+Spring Boot выполнит `docker compose --profile messaging --profile cache up`. Kafka и Hazelcast запустятся вместе с PostgreSQL и Redis.
 
 ### Активация через переменную окружения
 
@@ -71,7 +70,7 @@ Spring Boot выполнит `docker compose --profile messaging --profile cache
 SPRING_DOCKER_COMPOSE_PROFILES_ACTIVE=messaging ./gradlew bootRun
 ```
 
-Запустятся только PostgreSQL, Redis, Kafka и Zookeeper (без Hazelcast).
+Запустятся только PostgreSQL, Redis и Kafka (без Hazelcast).
 
 ## Spring-профили для compose-конфигурации
 
@@ -149,16 +148,18 @@ spring:
 
 ## Несколько compose-файлов
 
-Docker Compose поддерживает слияние нескольких файлов. Spring Boot позволяет указать несколько файлов:
+Docker Compose поддерживает слияние нескольких файлов. Свойство `spring.docker.compose.file` принимает список — файлы мержатся в указанном порядке:
 
 ```yaml
 spring:
   docker:
     compose:
-      file: compose.yaml
+      file:
+        - compose.yaml
+        - compose-monitoring.yaml
 ```
 
-Но для работы с несколькими файлами через override лучше использовать стандартный механизм Docker Compose — файл `compose.override.yaml`, который автоматически мержится с `compose.yaml`:
+Именно так и подключаются локальные переопределения. Штатный механизм Docker Compose — файл `compose.override.yaml`, который сам подхватывается командой `docker compose up`, — со Spring Boot **не работает**: интеграция всегда передаёт найденный файл явно (`docker compose --file compose.yaml …`), а явный `--file` отключает автоподхват override. Поэтому override-файл нужно перечислить руками:
 
 ```
 project/
@@ -172,7 +173,7 @@ project/
 ```yaml
 services:
   db:
-    image: postgres:17.5
+    image: postgres:18.4
     ports:
       - "5432:5432"
     environment:
@@ -186,18 +187,35 @@ services:
 ```yaml
 services:
   db:
-    ports:
+    ports: !override
       - "5433:5432"    # другой порт, если 5432 занят
     volumes:
-      - pgdata:/var/lib/postgresql/data  # сохранять данные
+      - pgdata:/var/lib/postgresql        # сохранять данные (в postgres:18+ том смонтирован сюда)
 
 volumes:
   pgdata:
 ```
 
-Docker Compose автоматически объединит оба файла. Spring Boot увидит результат слияния.
+**Про `!override`:** без этого тега список портов не заменяется, а **дополняется** — записи считаются разными, если отличается опубликованный порт. В результате Compose опубликует оба маппинга, `5432:5432` и `5433:5432`, и занятый порт 5432 никуда не денется. Проверить результат слияния до запуска можно так:
 
-**Важно:** добавь `compose.override.yaml` в `.gitignore` — это файл для локальных настроек конкретного разработчика.
+```bash
+docker compose -f compose.yaml -f compose.override.yaml config
+```
+
+Для `volumes` и `environment` тег не нужен: тома дополняются, переменные переопределяются по ключу.
+
+Чтобы Spring Boot увидел слияние, оба файла указываются в свойстве:
+
+```yaml
+spring:
+  docker:
+    compose:
+      file:
+        - compose.yaml
+        - compose.override.yaml
+```
+
+**Важно:** добавь `compose.override.yaml` в `.gitignore` — это файл для локальных настроек конкретного разработчика. И помни, что при запуске `docker compose up` руками, без Spring Boot, override подхватится сам — поведение отличается.
 
 ## Условный запуск через Spring-профили
 
@@ -234,7 +252,7 @@ Docker Compose поддерживает подстановку переменн�
 ```yaml
 services:
   db:
-    image: postgres:${POSTGRES_VERSION:-17.5}
+    image: postgres:${POSTGRES_VERSION:-18.4}
     ports:
       - "${DB_PORT:-5432}:5432"
     environment:
@@ -247,7 +265,7 @@ services:
 
 ```bash
 # .env
-POSTGRES_VERSION=16.8
+POSTGRES_VERSION=17.5
 DB_PORT=5433
 DB_NAME=myapp
 ```
@@ -256,10 +274,10 @@ Spring Boot читает compose-файл после подстановки пе
 
 ## Практика
 
-1. Добавь `profiles: [messaging]` к Kafka и Zookeeper в compose.yaml. Запусти без указания профиля — убедись, что Kafka не запускается
+1. Добавь `profiles: [messaging]` к Kafka в compose.yaml. Запусти без указания профиля — убедись, что Kafka не запускается
 2. Добавь `spring.docker.compose.profiles.active: messaging` в application.yml — теперь Kafka должна подняться
 3. Создай `application-dev.yml` с `lifecycle-management: start_only` и `application-minimal.yml` без Docker Compose профилей. Переключайся между ними
-4. Создай `compose.override.yaml`, который меняет порт PostgreSQL на 5433. Добавь его в `.gitignore`
+4. Создай `compose.override.yaml`, который меняет порт PostgreSQL на 5433 (не забудь `!override`), перечисли оба файла в `spring.docker.compose.file` и проверь итог через `docker compose ... config`. Добавь override в `.gitignore`
 5. Добавь подстановку переменных в compose.yaml для имени базы и пользователя. Создай `.env` файл с кастомными значениями
 6. Активируй Docker Compose профиль через переменную окружения `SPRING_DOCKER_COMPOSE_PROFILES_ACTIVE` без изменения application.yml
 
@@ -268,6 +286,6 @@ Spring Boot читает compose-файл после подстановки пе
 - Docker Compose профили позволяют запускать подмножество сервисов — активируются через `spring.docker.compose.profiles.active`
 - Сервисы без `profiles` запускаются всегда, с `profiles` — только при явной активации
 - Spring-профили (`application-{profile}.yml`) управляют compose-настройками для разных сценариев: dev, test, minimal
-- `compose.override.yaml` автоматически мержится с `compose.yaml` — используй для локальных настроек разработчика
+- `compose.override.yaml` со Spring Boot автоматически не подхватывается: интеграция передаёт файлы через `--file`, поэтому override перечисляется явно в `spring.docker.compose.file`
 - Переменные окружения в compose-файле (`${VAR:-default}`) позволяют параметризовать конфигурацию через `.env`
 - Комбинация Spring-профилей и Docker Compose профилей даёт гибкое управление инфраструктурой для любого сценария

@@ -7,14 +7,16 @@ Spring Boot предоставляет набор свойств для наст
 | Свойство | Тип | По умолчанию | Описание |
 |----------|-----|-------------|----------|
 | `spring.docker.compose.enabled` | boolean | `true` | Включить/выключить интеграцию |
-| `spring.docker.compose.file` | String | автоопределение | Путь к compose-файлу |
+| `spring.docker.compose.file` | List | автоопределение | Пути к compose-файлам (можно несколько) |
 | `spring.docker.compose.lifecycle-management` | enum | `start_and_stop` | Режим управления жизненным циклом |
-| `spring.docker.compose.host` | String | `localhost` | Хост для подключения к сервисам |
-| `spring.docker.compose.start.command` | enum | `up` | Команда запуска |
-| `spring.docker.compose.start.arguments` | String | — | Аргументы для команды запуска |
+| `spring.docker.compose.host` | String | из docker context | Хост для подключения к сервисам (локально — `127.0.0.1`) |
+| `spring.docker.compose.arguments` | List | — | Аргументы, добавляемые ко всем командам |
+| `spring.docker.compose.start.command` | enum | `up` | Команда запуска (`up` или `start`) |
+| `spring.docker.compose.start.arguments` | List | — | Аргументы для команды запуска |
+| `spring.docker.compose.start.skip` | enum | `if-running` | Пропускать запуск, если сервисы уже подняты (`if-running` / `never`) |
 | `spring.docker.compose.start.log-level` | enum | `info` | Уровень логирования при запуске |
 | `spring.docker.compose.stop.command` | enum | `stop` | Команда остановки (`stop` или `down`) |
-| `spring.docker.compose.stop.arguments` | String | — | Аргументы для команды остановки |
+| `spring.docker.compose.stop.arguments` | List | — | Аргументы для команды остановки |
 | `spring.docker.compose.stop.timeout` | Duration | `10s` | Таймаут остановки |
 | `spring.docker.compose.skip.in-tests` | boolean | `true` | Пропускать в тестах |
 | `spring.docker.compose.profiles.active` | List | — | Активные Docker Compose профили |
@@ -55,7 +57,16 @@ spring:
       file: infrastructure/docker/compose.yaml
 ```
 
-Путь может быть абсолютным или относительным (от рабочей директории).
+Путь может быть абсолютным или относительным (от рабочей директории). Свойство принимает список — можно передать несколько файлов, и Docker Compose смержит их в том порядке, в каком они перечислены:
+
+```yaml
+spring:
+  docker:
+    compose:
+      file:
+        - compose.yaml
+        - compose-monitoring.yaml
+```
 
 ## Настройка команды запуска
 
@@ -67,7 +78,9 @@ spring:
     compose:
       start:
         command: up
-        arguments: --build --force-recreate
+        arguments:
+          - "--build"
+          - "--force-recreate"
         log-level: info
 ```
 
@@ -80,11 +93,13 @@ spring:
 | `warn` | Только предупреждения |
 | `error` | Только ошибки |
 
+Тип свойства — `org.springframework.boot.logging.LogLevel`, так что формально доступны и `trace`, `fatal`, `off`.
+
 **Внимание:** аргумент `--build` пересобирает образы при каждом запуске. Используй его, только если compose-файл содержит сервисы с `build` (локальные Dockerfile).
 
 ## Настройка хоста
 
-По умолчанию Spring Boot считает, что сервисы доступны на `localhost`. Если Docker запущен на удалённой машине или в VM:
+По умолчанию хост берётся из активного docker context (локально это `127.0.0.1`), с оглядкой на переменные `DOCKER_HOST` и `SERVICES_HOST`. Если Docker запущен на удалённой машине или в VM, хост можно задать явно:
 
 ```yaml
 spring:
@@ -174,6 +189,10 @@ spring:
 
 Контейнеры запускаются один раз, при повторных запусках приложения readiness-проверка пропускается.
 
+**Подводный камень такой конфигурации.** Пока контейнеры живы, `start.skip: if-running` (значение по умолчанию) пропускает запуск целиком — вместе с любыми изменениями конфигурации. Сменил `spring.docker.compose.file`, активировал Docker Compose профиль (урок 9), поправил compose-файл — Spring Boot напечатает `There are already Docker Compose services running, skipping startup` и продолжит работать со старыми контейнерами. Ошибки при этом нет, просто ничего не меняется. Лечится `docker compose down` руками или `start.skip: never`.
+
+Как ведёт себя `never`: команда запуска выполняется при каждом старте приложения, но контейнеры пересоздаются не всегда. Если конфигурация не менялась, Compose печатает `Container my_postgres Running` и оставляет всё как есть; `Recreate` → `Recreated` появляется только после правки compose-файла — ровно того случая, ради которого `never` и ставят. От гонки при пересоздании страхует TCP-проверка Spring Boot, но она подтверждает лишь открытый порт, поэтому healthcheck для баз данных всё равно стоит держать (урок 10).
+
 ### Для демонстрации с чистыми данными
 
 ```yaml
@@ -184,7 +203,8 @@ spring:
       lifecycle-management: start_and_stop
       stop:
         command: down
-        arguments: -v
+        arguments:
+          - "--volumes"
 ```
 
 ```bash
@@ -206,18 +226,18 @@ spring:
 
 1. Создай `application.yml` с `lifecycle-management: start_only` и запусти приложение дважды — второй раз должен быть быстрее
 2. Переопредели `lifecycle-management` через переменную окружения на `start_and_stop` без изменения yml-файла
-3. Настрой `readiness.timeout: 5s` и попробуй запустить приложение с Kafka без healthcheck — наблюдай таймаут
-4. Увеличь `readiness.timeout: 3m` — теперь Spring Boot дождётся Kafka
-5. Создай `application-clean.yml` с `stop.command: down` и `stop.arguments: -v`. Запусти с профилем `clean` — убедись, что данные не сохраняются
-6. Отключи интеграцию через `SPRING_DOCKER_COMPOSE_ENABLED=false`, предварительно запустив контейнеры вручную — убедись, что приложение подключается к ним, но не управляет жизненным циклом
+3. Добавь в compose сервис, который не открывает пробрасываемый порт (например, `image: alpine`, `command: sleep 600`, `ports: ["9999:9999"]`), поставь `readiness.timeout: 10s` и запусти приложение — получи `ReadinessTimeoutException`
+4. Помести на этот сервис лейбл `org.springframework.boot.readiness-check.tcp.disable: true` — приложение стартует, несмотря на закрытый порт
+5. Создай `application-clean.yml` с `stop.command: down` и `stop.arguments: ["--volumes"]`. Запусти с профилем `clean` — убедись, что данные не сохраняются
+6. Запусти контейнеры вручную (`docker compose up -d`) и стартуй приложение с `lifecycle-management: none` — убедись, что подключения настраиваются, но контейнерами приложение не управляет. Затем поставь `SPRING_DOCKER_COMPOSE_ENABLED=false` и увидь разницу: интеграция выключена целиком, ConnectionDetails не создаются и приложение падает с `Failed to configure a DataSource`
 7. Переименуй compose-файл и укажи путь через `spring.docker.compose.file`
 
 ## Итоги урока
 
 - Все настройки Docker Compose интеграции находятся под префиксом `spring.docker.compose.*`
-- `enabled: false` полностью отключает интеграцию — полезно для production и CI
+- `enabled: false` полностью отключает интеграцию, включая создание ConnectionDetails — если контейнеры подняты вручную и подключения всё же нужны, бери `lifecycle-management: none`
 - `readiness.wait: only-if-started` пропускает проверку готовности для уже запущенных контейнеров — ускоряет повторные запуски
-- `readiness.timeout` определяет, сколько Spring Boot ждёт готовности сервисов — для Kafka и Elasticsearch стоит увеличить
+- `readiness.timeout` определяет, сколько Spring Boot ждёт готовности сервисов; TCP-проверка засчитывает сервис готовым сразу после открытия порта, поэтому для медленно инициализирующихся брокеров нужен healthcheck, а не увеличенный таймаут
 - Переменные окружения и аргументы командной строки позволяют переключать поведение без изменения файлов
 - Spring-профили (`application-{profile}.yml`) — удобный способ хранить разные compose-конфигурации для разных сценариев
-- `start.arguments` позволяет добавить `--build` или `--force-recreate` к команде запуска
+- `start.arguments`, `stop.arguments` и общий `arguments` — списки строк; через них передаются `--build`, `--volumes`, `--project-name` и другие флаги Docker Compose

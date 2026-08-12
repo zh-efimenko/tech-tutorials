@@ -16,7 +16,7 @@
 
 Начиная с Spring Boot 3.1, в экосистему добавлена зависимость `spring-boot-docker-compose`. Она решает две задачи:
 
-1. **Автоматический запуск и остановка контейнеров** — Spring Boot сам вызывает `docker compose up` при старте приложения и `docker compose down` при остановке
+1. **Автоматический запуск и остановка контейнеров** — Spring Boot сам вызывает `docker compose up` при старте приложения и `docker compose stop` при остановке
 2. **Автоконфигурация подключений** — Spring Boot читает compose-файл, определяет образы сервисов и автоматически настраивает `spring.datasource.url`, `spring.data.redis.host` и другие properties
 
 ```
@@ -26,9 +26,9 @@
 │  1. Находит compose.yaml в корне проекта         │
 │  2. Выполняет docker compose up                  │
 │  3. Читает образы и порты из compose-файла       │
-│  4. Настраивает DataSource, Redis, Kafka и т.д.  │
-│  5. Запускает ApplicationContext                  │
-│  6. При остановке: docker compose down           │
+│  4. Настраивает DataSource, Redis, Hazelcast     │
+│  5. Запускает ApplicationContext                 │
+│  6. При остановке: docker compose stop           │
 │                                                  │
 └──────────────────────────────────────────────────┘
 ```
@@ -70,21 +70,29 @@ Spring Boot сам определяет хост, порт, credentials из com
 
 ## Какие сервисы поддерживаются
 
-Spring Boot автоматически распознаёт образы и настраивает подключения для популярных технологий:
+Spring Boot распознаёт сервис по **имени образа** — список имён зашит в самой интеграции. Основные из них (Spring Boot 4.1):
 
-| Технология | Образы | Что настраивается |
-|------------|--------|-------------------|
-| PostgreSQL | `postgres`, `bitnami/postgresql` | `spring.datasource.*` |
-| MySQL | `mysql`, `bitnami/mysql` | `spring.datasource.*` |
-| MongoDB | `mongo`, `bitnami/mongodb` | `spring.data.mongodb.*` |
-| Redis | `redis`, `bitnami/redis` | `spring.data.redis.*` |
-| Kafka | `confluentinc/cp-kafka`, `bitnami/kafka` | `spring.kafka.*` |
+| Технология | Имена образов | Что настраивается |
+|------------|---------------|-------------------|
+| PostgreSQL | `postgres` | `spring.datasource.*`, `spring.r2dbc.*` |
+| MySQL / MariaDB | `mysql`, `mariadb` | `spring.datasource.*`, `spring.r2dbc.*` |
+| MS SQL Server | `mssql/server` | `spring.datasource.*`, `spring.r2dbc.*` |
+| Oracle | `gvenzl/oracle-free`, `gvenzl/oracle-xe` | `spring.datasource.*`, `spring.r2dbc.*` |
+| ClickHouse | `clickhouse/clickhouse-server` | `spring.datasource.*`, `spring.r2dbc.*` |
+| MongoDB | `mongo` | `spring.data.mongodb.*` |
+| Redis | `redis`, `redis/redis-stack`, `redis/redis-stack-server` | `spring.data.redis.*` |
 | RabbitMQ | `rabbitmq` | `spring.rabbitmq.*` |
 | Hazelcast | `hazelcast/hazelcast` | `HazelcastConnectionDetails` |
-| Elasticsearch | `elasticsearch`, `bitnami/elasticsearch` | `spring.elasticsearch.*` |
+| Elasticsearch | `elasticsearch`, `elasticsearch/elasticsearch` | `spring.elasticsearch.*` |
+| Cassandra | `cassandra` | `spring.cassandra.*` |
+| Neo4j | `neo4j` | `spring.neo4j.*` |
+| Pulsar | `apachepulsar/pulsar` | `spring.pulsar.*` |
+| ActiveMQ / Artemis | `apache/activemq`, `apache/activemq-artemis` | `spring.activemq.*`, `spring.artemis.*` |
 | Zipkin | `openzipkin/zipkin` | `management.zipkin.*` |
 
-Полный список поддерживаемых образов расширяется с каждой версией Spring Boot.
+**Важно:** **Kafka в этом списке нет**. Для Kafka connection details создаются только через Testcontainers, но не через Docker Compose. Брокер в compose-файле поднимется и Spring Boot дождётся его готовности, а `spring.kafka.bootstrap-servers` придётся указать в `application.yml` вручную. Это не изменилось ни в 3.x, ни в 4.x — подробности в уроке 4.
+
+Образы с другими именами (`bitnami/postgresql`, собственные сборки) не распознаются автоматически — им нужен лейбл `org.springframework.boot.service-connection` (урок 5).
 
 ## Когда это полезно
 
@@ -101,7 +109,7 @@ Spring Boot автоматически распознаёт образы и на
 ## Практика
 
 1. Установи Docker Desktop (или Docker Engine + Compose plugin), если ещё не установлен
-2. Убедись, что команда `docker compose version` возвращает версию v2.x
+2. Убедись, что команда `docker compose version` возвращает версию не ниже 2.2.0 (на актуальном Docker Desktop это уже `Docker Compose version v5.x`)
 3. Создай минимальный Spring Boot проект с `compose.yaml` (PostgreSQL) и запусти `./gradlew bootRun`
 4. Открой Docker Desktop или выполни `docker ps` — убедись, что контейнеры запущены автоматически
 5. Останови приложение (Ctrl+C) и снова проверь `docker ps` — контейнеры должны остановиться
@@ -111,7 +119,7 @@ Spring Boot автоматически распознаёт образы и на
 
 - `spring-boot-docker-compose` автоматизирует запуск и остановку Docker Compose при старте/остановке Spring Boot приложения
 - Зависимость избавляет от ручного управления контейнерами и дублирования конфигурации подключений
-- Spring Boot автоматически распознаёт образы популярных технологий (PostgreSQL, Redis, Kafka и другие) и настраивает properties
+- Spring Boot распознаёт сервис по имени образа (PostgreSQL, Redis, Hazelcast и другие) и настраивает properties; Kafka в этот список не входит
 - Зависимость предназначена только для разработки и тестов — в production она не используется
 - Для работы требуется Docker Compose v2, установленный на машине разработчика
 - Подход упрощает онбординг: новому разработчику достаточно выполнить `./gradlew bootRun`

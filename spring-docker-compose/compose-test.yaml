@@ -5,7 +5,7 @@
 services:
 
   db:
-    image: postgres:17.5
+    image: postgres:18.4
     container_name: course_test_postgres
     ports:
       - "5433:5432"
@@ -15,7 +15,7 @@ services:
       POSTGRES_PASSWORD: test
 
   redis:
-    image: redis:7.4
+    image: redis:8.10
     container_name: course_test_redis
     ports:
       - "6380:6379"
