@@ -14,7 +14,7 @@
 | `graph-databases` | Neo4j — графовые БД, Cypher, GDS, GraphRAG (шесть треков) | 39 |
 | `hazelcast` | Hazelcast — in-memory data grid | 12 |
 | `spring-docker-compose` | Spring Boot Docker Compose Integration | 10 |
-| `AI` | Гайды по MCP и промптингу (не курс) | — |
+| `AI` | Гайды по MCP и промптингу + AI Practices Radar (не курс) | — |
 
 ## Структура каждого курса
 
