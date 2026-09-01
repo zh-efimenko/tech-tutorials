@@ -6,15 +6,15 @@
 
 ## Курсы
 
-| Директория | Технология | Уроков |
-|---|---|---|
-| `archunit` | ArchUnit — архитектурные тесты Java/Spring | 10 |
-| `clickhouse` | ClickHouse — колоночная СУБД | 11 |
-| `gradle/toml` | Gradle Version Catalogs (TOML) | 8 |
-| `graph-databases` | Neo4j — графовые БД, Cypher, GDS, GraphRAG (шесть треков) | 39 |
-| `hazelcast` | Hazelcast — in-memory data grid | 12 |
-| `spring-docker-compose` | Spring Boot Docker Compose Integration | 10 |
-| `AI` | Гайды по MCP и промптингу + AI Practices Radar (не курс) | — |
+| Директория | Технология | Уроков | Стек курса |
+|---|---|---|---|
+| `archunit` | ArchUnit — архитектурные тесты Java/Spring | 10 | ArchUnit 1.5.0, JUnit 5/6, Java 17+ (примеры на 25), Spring Boot 3.5.x или 4.x, Gradle 9.x (8.14+) / Maven 3.9+ |
+| `clickhouse` | ClickHouse — колоночная СУБД | 11 | ClickHouse 26.3.17.110 LTS, Java 25, Spring Boot 4.1.x, Gradle 9.x, Testcontainers 2.x |
+| `gradle/toml` | Gradle Version Catalogs (TOML) | 8 | Gradle 9.x (примеры на 9.5.0), Java 25, Spring Boot 4.1.0 |
+| `graph-databases` | Neo4j — графовые БД, Cypher, GDS, GraphRAG (шесть треков) | 39 | Neo4j 2026.07, Cypher 25, APOC + GDS, Java Driver 6.1, Spring Data Neo4j 8.1, Spring Boot 4.1.x, Spring AI 2.0.x, Java 25, Gradle 9.x, Ollama |
+| `hazelcast` | Hazelcast — in-memory data grid | 12 | Hazelcast 5.7.0, Java 17+ (образ на Java 25), Spring Boot 3.x–4.1.x, Gradle / Maven |
+| `spring-docker-compose` | Spring Boot Docker Compose Integration | 10 | Java 25, Spring Boot 4.1.x, Gradle 9.x, Docker Compose v2 (мин. 2.2.0), PostgreSQL 18.4, Redis 8.10, Kafka 4.3.1, Hazelcast 5.7 |
+| `AI` | Гайды по MCP и промптингу + AI Practices Radar (не курс) | — | — |
 
 ## Структура каждого курса
 
@@ -80,7 +80,11 @@
 
 ## Стек, предполагаемый у аудитории
 
-Java 17–25 · Spring Boot 3.x–4.x · Gradle 8.x–9.x · Docker Desktop · PostgreSQL · Redis · Kafka · Hazelcast
+Базовый минимум по всем курсам: Java 17+ · Spring Boot 3.5.x · Gradle 9.x (в `archunit` допустим 8.14+) · Docker Desktop / Docker Engine + Docker Compose v2.
+
+Актуальная целевая версия, на которой написано большинство курсов: Java 25 · Spring Boot 4.1.x · Gradle 9.x. На Java 17 и Spring Boot 3.5.x рассчитаны только `archunit` и `hazelcast` — там это заявлено в `plan.md` явно.
+
+Инфраструктура в примерах: PostgreSQL 18.4 · Redis 8.10 · Kafka 4.3.1 · Hazelcast 5.7.0 · ClickHouse 26.3.17.110 LTS · Neo4j 2026.07.
 
 ## Создание нового курса
 

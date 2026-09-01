@@ -7,10 +7,10 @@
 | Курс | Папка | Описание |
 |------|-------|----------|
 | **Графовые базы данных** | `graph-databases/` | Neo4j 2026, Cypher 25, Spring Data Neo4j 8, графовые алгоритмы GDS и GraphRAG — 39 уроков в шести треках |
-| **Hazelcast** | `hazelcast/` | In-Memory Data Grid для распределённого кэширования — от основ до production (12 уроков) |
-| **ArchUnit** | `archunit/` | Автоматическая проверка архитектурных правил в Spring Boot 3 с помощью ArchUnit и JUnit 5 |
-| **ClickHouse** | `clickhouse/` | Проектирование аналитических схем, эффективные запросы, интеграция со Spring Boot 3 |
-| **Gradle Version Catalogs** | `gradle/toml/` | Централизованное управление зависимостями через TOML-файл, шаринг между микросервисами |
+| **Hazelcast** | `hazelcast/` | In-Memory Data Grid 5.7 для распределённого кэширования — от основ до production (12 уроков) |
+| **ArchUnit** | `archunit/` | Автоматическая проверка архитектурных правил в Spring Boot 3.5/4.1 с помощью ArchUnit 1.5 и JUnit 5/6 |
+| **ClickHouse** | `clickhouse/` | ClickHouse 26.3 LTS: аналитические схемы, эффективные запросы, интеграция со Spring Boot 4.1 |
+| **Gradle Version Catalogs** | `gradle/toml/` | Централизованное управление зависимостями через TOML-файл на Gradle 9.x, шаринг между микросервисами |
 | **Spring Boot Docker Compose** | `spring-docker-compose/` | Автоматическое управление локальной инфраструктурой через `spring-boot-docker-compose` |
 | **AI** | `AI/` | Руководства по настройке MCP-серверов, инженерии промптов и AI Practices Radar |
 
@@ -88,7 +88,20 @@
 
 ## Требования
 
-- Java 17+ (некоторые курсы требуют Java 25)
-- Gradle 8.x+
-- Docker Desktop / Docker Engine + Docker Compose v2
-- Spring Boot 3.x (программа `graph-databases/` требует Spring Boot 4.1.x и Gradle 9.x)
+Базовый минимум, покрывающий все курсы:
+
+- **Java 17+** — минимум для `archunit` и `hazelcast`; остальные курсы написаны на **Java 25**
+- **Spring Boot 3.5.x** — минимум для `archunit` и `hazelcast`; остальные курсы написаны на **Spring Boot 4.1.x**
+- **Gradle 9.x** (в `archunit` работает и 8.14+, Maven 3.9+ — альтернатива)
+- **Docker Desktop / Docker Engine + Docker Compose v2**
+
+Стек по курсам:
+
+| Курс | Стек |
+|------|------|
+| `graph-databases/` | Neo4j 2026.07 Community, Cypher 25, APOC + GDS, Neo4j Java Driver 6.1, Spring Data Neo4j 8.1, Spring Boot 4.1.x, Spring AI 2.0.x, Java 25, Gradle 9.x, Ollama |
+| `hazelcast/` | Hazelcast 5.7.0 (образ собран на Java 25, есть теги `-jdk17` и `-jdk21`), Java 17+, Spring Boot 3.x–4.1.x, Gradle или Maven, Docker |
+| `archunit/` | ArchUnit 1.5.0, JUnit 5 (Boot 3.x) или JUnit 6 (Boot 4.x), Java 17+ (примеры проверены на Java 25), Spring Boot 3.5.x или 4.x, Gradle 9.x (8.14+) или Maven 3.9+ |
+| `clickhouse/` | ClickHouse 26.3.17.110 (LTS), Java 25, Spring Boot 4.1.x, Gradle 9.x, Testcontainers 2.x, Docker Compose v2 |
+| `gradle/toml/` | Gradle 9.x (примеры прогонялись на 9.5.0; version catalogs стабильны с 7.4.1), Java 25, Spring Boot 4.1.0 |
+| `spring-docker-compose/` | Java 25, Spring Boot 4.1.x, Gradle 9.x, Docker Compose v2 (минимум 2.2.0), PostgreSQL 18.4, Redis 8.10, Kafka 4.3.1, Hazelcast 5.7 |
